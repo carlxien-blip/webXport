@@ -6,6 +6,7 @@ const queryMsg: ContentToBackground = { type: 'state/query' };
 chrome.runtime
   .sendMessage(queryMsg)
   .then((reply: StateQueryReply | undefined) => {
+    console.log('[webxport content] state/query reply:', reply);
     if (!reply) {
       stopRecording();
       return;
@@ -17,7 +18,8 @@ chrome.runtime
       kickoffReplay(reply.replay.script, reply.replay.fromIndex);
     }
   })
-  .catch(() => {
+  .catch((e) => {
+    console.log('[webxport content] state/query failed:', (e as Error).message);
     stopRecording();
   });
 
@@ -32,8 +34,11 @@ chrome.runtime.onMessage.addListener((msg: BackgroundToContent, _sender, sendRes
       sendResponse({ ok: true });
       return false;
     case 'replay/start':
+      console.log('[webxport content] received replay/start, fromIndex:', msg.fromIndex);
       if (!isReplayActive()) {
         kickoffReplay(msg.script, msg.fromIndex);
+      } else {
+        console.log('[webxport content] replay already active, ignoring');
       }
       sendResponse({ ok: true });
       return false;

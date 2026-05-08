@@ -38,9 +38,11 @@ export async function runScript(script: Script): Promise<RunResult> {
   if (isRunning) throw new Error('已有任务在运行，等它结束再来');
   isRunning = true;
   const startedAt = Date.now();
+  console.log('[webxport] runScript start:', script.name, 'targetUrl:', script.targetUrl, 'steps:', script.steps.length);
 
   try {
     const result = await doRun(script, startedAt);
+    console.log('[webxport] runScript done:', result.status, result.error ?? '', 'files:', result.downloadedFiles.length);
     await recordRunResult(script.id, result);
     return result;
   } catch (e) {
@@ -63,11 +65,14 @@ async function doRun(script: Script, startedAt: number): Promise<RunResult> {
   const tab = await openOrFocusTab(script.targetUrl);
   if (tab.id === undefined) throw new Error('无法获取 tab id');
   const tabId = tab.id;
+  console.log('[webxport] doRun: tab id=', tabId, 'url=', tab.url);
 
   await waitForTabComplete(tabId);
+  console.log('[webxport] doRun: tab complete, sending replay/start');
 
   return new Promise<RunResult>((resolve) => {
     const timeout = setTimeout(() => {
+      console.log('[webxport] doRun: 5min timeout fired');
       resolve({
         startedAt,
         endedAt: Date.now(),
@@ -91,20 +96,25 @@ async function doRun(script: Script, startedAt: number): Promise<RunResult> {
     };
 
     const startMsg: BackgroundToContent = { type: 'replay/start', script, fromIndex: 0 };
-    chrome.tabs.sendMessage(tabId, startMsg).catch((e) => {
-      clearTimeout(timeout);
-      resolve({
-        startedAt,
-        endedAt: Date.now(),
-        status: 'failed',
-        error: `无法连接到目标 tab：${(e as Error).message}`,
-        downloadedFiles: [],
-      });
-    });
+    chrome.tabs.sendMessage(tabId, startMsg).then(
+      () => console.log('[webxport] doRun: replay/start delivered'),
+      (e) => {
+        console.log('[webxport] doRun: replay/start delivery failed:', (e as Error).message);
+        clearTimeout(timeout);
+        resolve({
+          startedAt,
+          endedAt: Date.now(),
+          status: 'failed',
+          error: `无法连接到目标 tab：${(e as Error).message}`,
+          downloadedFiles: [],
+        });
+      }
+    );
   });
 }
 
 export function handleContentMessage(msg: ContentToBackground): void {
+  console.log('[webxport] handleContentMessage:', msg.type, 'active?', !!active);
   if (!active) return;
 
   if (msg.type === 'replay/step-done') {

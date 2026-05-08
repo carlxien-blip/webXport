@@ -15,18 +15,23 @@ export function isReplayActive(): boolean {
 export async function replay(script: Script, fromIndex: number): Promise<void> {
   if (isActive) return;
   isActive = true;
+  console.log('[webxport] replay start:', script.name, 'fromIndex:', fromIndex, 'totalSteps:', script.steps.length);
   try {
     for (let i = fromIndex; i < script.steps.length; i++) {
       const step = script.steps[i];
+      console.log('[webxport] step', i, step.kind, 'css:', 'selector' in step ? step.selector.css.slice(0, 60) : '-');
       try {
         await runStep(step);
+        console.log('[webxport] step', i, 'done');
         reportDone(i);
       } catch (e) {
+        console.log('[webxport] step', i, 'failed:', (e as Error).message);
         reportFailed(i, (e as Error).message);
         return;
       }
       await sleep(ACTION_GAP_MS);
     }
+    console.log('[webxport] replay complete');
     reportComplete();
   } finally {
     isActive = false;
