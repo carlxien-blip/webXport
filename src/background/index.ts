@@ -3,6 +3,7 @@ import type {
   PopupToBackground,
   BackgroundToPopup,
   BackgroundToContent,
+  RecCheckReply,
 } from '../shared/messages';
 import type { RecordingDraft, Script } from '../shared/types';
 import {
@@ -39,11 +40,22 @@ chrome.runtime.onMessage.addListener((msg: PopupToBackground | ContentToBackgrou
     return false;
   }
 
+  if (msg.type === 'rec/check') {
+    handleRecCheck(sender).then(sendResponse);
+    return true;
+  }
+
   handlePopupMessage(msg as PopupToBackground, sender)
     .then((reply) => sendResponse(reply))
     .catch((e) => sendResponse({ type: 'error', error: (e as Error).message } satisfies BackgroundToPopup));
   return true;
 });
+
+async function handleRecCheck(sender: chrome.runtime.MessageSender): Promise<RecCheckReply> {
+  const session = await readDraftSession();
+  const senderTabId = sender.tab?.id;
+  return { active: session !== null && senderTabId === session.tabId };
+}
 
 let appendChain: Promise<void> = Promise.resolve();
 function queueAppendStep(step: import('../shared/types').Step): void {

@@ -2,13 +2,15 @@ import { buildSelectorBundle } from '../shared/selector';
 import type { ContentToBackground } from '../shared/messages';
 import type { Step } from '../shared/types';
 
-let active = false;
+type State = 'unknown' | 'active' | 'inactive';
+let state: State = 'unknown';
+let buffer: Step[] = [];
 
 const onClick = (e: MouseEvent) => {
-  if (!active) return;
+  if (state === 'inactive') return;
   const target = e.target as Element | null;
   if (!target || target.nodeType !== Node.ELEMENT_NODE) return;
-  emit({
+  handleStep({
     kind: 'click',
     selector: buildSelectorBundle(target),
     recordedAt: Date.now(),
@@ -16,14 +18,15 @@ const onClick = (e: MouseEvent) => {
 };
 
 const onChange = (e: Event) => {
-  if (!active) return;
-  const target = e.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
-  if (!target) return;
-  if (!('value' in target)) return;
+  if (state === 'inactive') return;
+  const target = e.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) {
+    return;
+  }
   if (target instanceof HTMLInputElement && (target.type === 'password' || target.type === 'hidden')) {
     return;
   }
-  emit({
+  handleStep({
     kind: 'input',
     selector: buildSelectorBundle(target),
     value: target.value,
@@ -31,24 +34,29 @@ const onChange = (e: Event) => {
   });
 };
 
+function handleStep(step: Step) {
+  if (state === 'active') {
+    emit(step);
+  } else {
+    buffer.push(step);
+  }
+}
+
 function emit(step: Step) {
   const msg: ContentToBackground = { type: 'rec/step', step };
   chrome.runtime.sendMessage(msg).catch(() => {});
 }
 
+document.addEventListener('click', onClick, true);
+document.addEventListener('change', onChange, true);
+
 export function startRecording() {
-  if (active) return;
-  active = true;
-  document.addEventListener('click', onClick, true);
-  document.addEventListener('change', onChange, true);
+  state = 'active';
+  for (const step of buffer) emit(step);
+  buffer = [];
 }
 
 export function stopRecording() {
-  active = false;
-  document.removeEventListener('click', onClick, true);
-  document.removeEventListener('change', onChange, true);
-}
-
-export function isRecording() {
-  return active;
+  state = 'inactive';
+  buffer = [];
 }

@@ -2,9 +2,14 @@ import type { Script, Step } from './types';
 
 export type ContentToBackground =
   | { type: 'rec/step'; step: Step }
+  | { type: 'rec/check' }
   | { type: 'replay/step-done'; index: number }
   | { type: 'replay/step-failed'; index: number; error: string }
   | { type: 'replay/complete' };
+
+export interface RecCheckReply {
+  active: boolean;
+}
 
 export type BackgroundToContent =
   | { type: 'rec/start' }
