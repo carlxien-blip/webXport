@@ -3,9 +3,15 @@ import { getActiveSession, noteDownload } from './runner';
 const ROOT_FOLDER = 'webxport';
 
 export function initDownloads(): void {
+  chrome.downloads.onCreated.addListener((item) => {
+    console.log('[webxport] download created:', item.id, 'url:', item.url?.slice(0, 80), 'filename:', item.filename, 'state:', item.state);
+  });
+
   chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+    console.log('[webxport] determining filename for:', item.id, 'original:', item.filename);
     const session = getActiveSession();
     if (!session) {
+      console.log('[webxport] no active session, letting Chrome use default filename');
       suggest();
       return;
     }
@@ -13,6 +19,7 @@ export function initDownloads(): void {
     const date = todayLocal();
     const base = item.filename.split(/[/\\]/).pop() ?? item.filename;
     const filename = `${ROOT_FOLDER}/${sub}/${date}/${base}`;
+    console.log('[webxport] redirecting download to:', filename);
     suggest({ filename, conflictAction: 'uniquify' });
     noteDownload(filename);
   });
