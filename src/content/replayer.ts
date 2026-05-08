@@ -7,17 +7,29 @@ const STEP_TIMEOUT_MS = 15_000;
 const ACTION_GAP_MS = 400;
 
 let isActive = false;
+let abortRequested = false;
 
 export function isReplayActive(): boolean {
   return isActive;
 }
 
+export function abortReplay(): void {
+  abortRequested = true;
+  console.log('[webxport] abortReplay flagged');
+}
+
 export async function replay(script: Script, fromIndex: number): Promise<void> {
   if (isActive) return;
   isActive = true;
+  abortRequested = false;
   console.log('[webxport] replay start:', script.name, 'fromIndex:', fromIndex, 'totalSteps:', script.steps.length);
   try {
     for (let i = fromIndex; i < script.steps.length; i++) {
+      if (abortRequested) {
+        console.log('[webxport] replay aborted at step', i);
+        reportFailed(i, '用户中止');
+        return;
+      }
       const step = script.steps[i];
       console.log('[webxport] step', i, step.kind, 'css:', 'selector' in step ? step.selector.css.slice(0, 60) : '-');
       try {

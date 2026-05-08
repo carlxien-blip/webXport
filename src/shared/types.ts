@@ -43,7 +43,7 @@ export interface ScheduleConfig {
 export interface RunResult {
   startedAt: number;
   endedAt: number;
-  status: 'success' | 'failed';
+  status: 'success' | 'failed' | 'aborted';
   error?: string;
   failedAtStep?: number;
   downloadedFiles: string[];
@@ -58,8 +58,11 @@ export interface Script {
   schedule: ScheduleConfig;
   createdAt: number;
   updatedAt: number;
-  lastRun?: RunResult;
+  /** Most recent first, capped at MAX_RUN_HISTORY in storage. */
+  runs: RunResult[];
 }
+
+export const MAX_RUN_HISTORY = 10;
 
 export interface RecordingDraft {
   scriptId: string;

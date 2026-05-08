@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { Script } from '../shared/types';
+import type { Script, RunResult } from '../shared/types';
+import type { RunState } from '../shared/messages';
 import {
   listScripts,
   deleteScript,
@@ -10,6 +11,8 @@ import {
   endRecording,
   cancelRecording,
   getActiveTabId,
+  abortScript,
+  getRunState,
   type RecordingState,
 } from './api';
 
@@ -21,12 +24,15 @@ export function App() {
   const [view, setView] = useState<View>({ kind: 'home' });
   const [scripts, setScripts] = useState<Script[]>([]);
   const [rec, setRec] = useState<RecordingState>({ recording: false });
+  const [run, setRun] = useState<RunState>({ running: false });
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
-      setScripts(await listScripts());
-      setRec(await getRecordingState());
+      const [s, r, rs] = await Promise.all([listScripts(), getRecordingState(), getRunState()]);
+      setScripts(s);
+      setRec(r);
+      setRun(rs);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -42,6 +48,16 @@ export function App() {
     <div className="p-3 flex flex-col gap-3">
       <Header />
       {error && <ErrorBar message={error} onClose={() => setError(null)} />}
+
+      {run.running && (
+        <RunningBanner
+          state={run}
+          onAbort={async () => {
+            try { await abortScript(); await refresh(); }
+            catch (e) { setError((e as Error).message); }
+          }}
+        />
+      )}
 
       {rec.recording && (
         <RecordingBar
@@ -207,7 +223,7 @@ function ScriptRow({ script, onOpen }: { script: Script; onOpen: () => void }) {
       <div className="text-xs text-neutral-500 truncate">
         {script.steps.length} 步 · {hostnameOf(script.targetUrl)}
       </div>
-      {script.lastRun && <LastRunBadge run={script.lastRun} />}
+      {script.runs[0] && <LastRunBadge run={script.runs[0]} />}
     </button>
   );
 }
@@ -217,11 +233,39 @@ function ScheduleBadge({ time }: { time: string }) {
   return <span className="text-xs text-blue-600">每天 {time}</span>;
 }
 
-function LastRunBadge({ run }: { run: import('../shared/types').RunResult }) {
-  const ok = run.status === 'success';
+function LastRunBadge({ run }: { run: RunResult }) {
+  const color = run.status === 'success' ? 'text-emerald-600' : run.status === 'aborted' ? 'text-amber-600' : 'text-red-600';
   return (
-    <div className={`text-xs ${ok ? 'text-emerald-600' : 'text-red-600'}`}>
-      上次：{ok ? `成功，${run.downloadedFiles.length} 个文件` : `失败 — ${run.error?.slice(0, 40)}`}
+    <div className={`text-xs ${color}`}>
+      上次：{describeRun(run)}
+    </div>
+  );
+}
+
+function describeRun(run: RunResult): string {
+  if (run.status === 'success') return `成功，${run.downloadedFiles.length} 个文件`;
+  if (run.status === 'aborted') return '已中止';
+  return `失败 — ${run.error?.slice(0, 40) ?? ''}`;
+}
+
+function RunningBanner({ state, onAbort }: { state: Extract<RunState, { running: true }>; onAbort: () => void }) {
+  const phase = state.phase === 'draining' ? '等待下载完成' : `第 ${state.doneSteps} / ${state.totalSteps} 步`;
+  return (
+    <div className="rounded bg-blue-50 border border-blue-200 p-2 flex items-center gap-2 text-sm">
+      <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+      <div className="flex-1 min-w-0">
+        <div className="font-medium truncate">正在运行：{state.scriptName}</div>
+        <div className="text-xs text-neutral-600">
+          {phase}
+          {state.downloadedFiles > 0 && ` · 已下 ${state.downloadedFiles} 个文件`}
+        </div>
+      </div>
+      <button
+        onClick={onAbort}
+        className="px-2 py-1 rounded bg-red-600 text-white text-xs hover:bg-red-700"
+      >
+        中止
+      </button>
     </div>
   );
 }
@@ -333,6 +377,18 @@ function DetailView({
         </ol>
       </details>
 
+      <details className="text-xs text-neutral-500">
+        <summary className="cursor-pointer">运行历史（{script.runs.length}）</summary>
+        {script.runs.length === 0 && (
+          <div className="mt-2 text-neutral-400">还没有运行过</div>
+        )}
+        <ul className="mt-2 flex flex-col gap-1">
+          {script.runs.map((r, i) => (
+            <RunHistoryRow key={i} run={r} />
+          ))}
+        </ul>
+      </details>
+
       <button
         onClick={() => {
           if (confirm(`删除脚本「${script.name}」？`)) onDelete(script.id);
@@ -351,4 +407,27 @@ function hostnameOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+function RunHistoryRow({ run }: { run: RunResult }) {
+  const color =
+    run.status === 'success' ? 'text-emerald-600'
+      : run.status === 'aborted' ? 'text-amber-600'
+        : 'text-red-600';
+  const when = new Date(run.startedAt);
+  const stamp = `${pad2(when.getMonth() + 1)}-${pad2(when.getDate())} ${pad2(when.getHours())}:${pad2(when.getMinutes())}`;
+  const dur = Math.round((run.endedAt - run.startedAt) / 1000);
+  return (
+    <li className="border-l-2 border-neutral-200 pl-2">
+      <div className="flex justify-between items-center">
+        <span className="font-mono text-neutral-700">{stamp}</span>
+        <span className="text-neutral-400">{dur}s</span>
+      </div>
+      <div className={color}>{describeRun(run)}</div>
+    </li>
+  );
+}
+
+function pad2(n: number): string {
+  return n.toString().padStart(2, '0');
 }

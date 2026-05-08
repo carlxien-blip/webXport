@@ -1,5 +1,5 @@
 import { startRecording, stopRecording } from './recorder';
-import { replay, isReplayActive } from './replayer';
+import { replay, isReplayActive, abortReplay } from './replayer';
 import type { BackgroundToContent, ContentToBackground, StateQueryReply } from '../shared/messages';
 
 const queryMsg: ContentToBackground = { type: 'state/query' };
@@ -40,6 +40,10 @@ chrome.runtime.onMessage.addListener((msg: BackgroundToContent, _sender, sendRes
       } else {
         console.log('[webxport content] replay already active, ignoring');
       }
+      sendResponse({ ok: true });
+      return false;
+    case 'replay/abort':
+      abortReplay();
       sendResponse({ ok: true });
       return false;
   }

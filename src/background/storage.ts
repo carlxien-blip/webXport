@@ -1,4 +1,5 @@
 import type { Script, RunResult } from '../shared/types';
+import { MAX_RUN_HISTORY } from '../shared/types';
 
 const KEY = 'webxport.scripts.v1';
 
@@ -6,9 +7,21 @@ interface Stored {
   scripts: Script[];
 }
 
+interface LegacyScript extends Omit<Script, 'runs'> {
+  runs?: RunResult[];
+  lastRun?: RunResult;
+}
+
 async function readAll(): Promise<Stored> {
   const out = await chrome.storage.local.get(KEY);
-  return (out[KEY] as Stored | undefined) ?? { scripts: [] };
+  const data = (out[KEY] as { scripts: LegacyScript[] } | undefined) ?? { scripts: [] };
+  for (const s of data.scripts) {
+    if (!Array.isArray(s.runs)) {
+      s.runs = s.lastRun ? [s.lastRun] : [];
+    }
+    delete s.lastRun;
+  }
+  return data as Stored;
 }
 
 async function writeAll(data: Stored): Promise<void> {
@@ -44,7 +57,7 @@ export async function recordRunResult(scriptId: string, result: RunResult): Prom
   const data = await readAll();
   const s = data.scripts.find((s) => s.id === scriptId);
   if (!s) return;
-  s.lastRun = result;
+  s.runs = [result, ...s.runs].slice(0, MAX_RUN_HISTORY);
   s.updatedAt = Date.now();
   await writeAll(data);
 }

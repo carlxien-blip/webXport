@@ -1,5 +1,5 @@
 import type { Script, RunResult } from '../shared/types';
-import type { BackgroundToContent, ContentToBackground } from '../shared/messages';
+import type { BackgroundToContent, ContentToBackground, RunState } from '../shared/messages';
 import { recordRunResult } from './storage';
 import { deliverToTab } from './inject';
 
@@ -28,6 +28,39 @@ let isRunning = false;
 
 export function getActiveSession(): ActiveSession | null {
   return active;
+}
+
+export function getRunState(): RunState {
+  if (!active) return { running: false };
+  return {
+    running: true,
+    scriptId: active.scriptId,
+    scriptName: active.script.name,
+    doneSteps: active.lastDoneStepIndex + 1,
+    totalSteps: active.script.steps.length,
+    phase: active.drainEndsAt !== null ? 'draining' : 'replay',
+    startedAt: active.startedAt,
+    downloadedFiles: active.downloadedFiles.length,
+  };
+}
+
+export async function abortRun(): Promise<void> {
+  if (!active) return;
+  const tabId = active.tabId;
+  console.log('[webxport] abort requested for run on tab', tabId);
+  cancelDrain();
+  try {
+    await deliverToTab(tabId, { type: 'replay/abort' });
+  } catch (e) {
+    console.log('[webxport] could not notify content of abort:', (e as Error).message);
+  }
+  finish({
+    startedAt: active.startedAt,
+    endedAt: Date.now(),
+    status: 'aborted',
+    error: '用户中止',
+    downloadedFiles: [...active.downloadedFiles],
+  });
 }
 
 export function getActiveReplayForTab(tabId: number): { script: Script; fromIndex: number } | null {

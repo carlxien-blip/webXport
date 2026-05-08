@@ -10,7 +10,8 @@ export type ContentToBackground =
 export type BackgroundToContent =
   | { type: 'rec/start'; name: string; stepCount: number }
   | { type: 'rec/stop' }
-  | { type: 'replay/start'; script: Script; fromIndex: number };
+  | { type: 'replay/start'; script: Script; fromIndex: number }
+  | { type: 'replay/abort' };
 
 export type PopupToBackground =
   | { type: 'rec/begin'; tabId: number; name: string }
@@ -21,14 +22,32 @@ export type PopupToBackground =
   | { type: 'script/get'; id: string }
   | { type: 'script/update'; script: Script }
   | { type: 'script/delete'; id: string }
-  | { type: 'script/run'; id: string };
+  | { type: 'script/run'; id: string }
+  | { type: 'script/abort' }
+  | { type: 'script/run-state' };
+
+export type RunPhase = 'replay' | 'draining';
+
+export type RunState =
+  | { running: false }
+  | {
+      running: true;
+      scriptId: string;
+      scriptName: string;
+      doneSteps: number;
+      totalSteps: number;
+      phase: RunPhase;
+      startedAt: number;
+      downloadedFiles: number;
+    };
 
 export type BackgroundToPopup =
   | { type: 'ok' }
   | { type: 'error'; error: string }
   | { type: 'rec/state-result'; recording: boolean; tabId?: number; stepCount?: number; name?: string }
   | { type: 'script/list-result'; scripts: Script[] }
-  | { type: 'script/get-result'; script: Script | null };
+  | { type: 'script/get-result'; script: Script | null }
+  | { type: 'script/run-state-result'; state: RunState };
 
 export interface StateQueryReply {
   recording: false | { name: string; stepCount: number };

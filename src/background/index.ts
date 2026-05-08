@@ -12,7 +12,7 @@ import {
   upsertScript,
   deleteScript,
 } from './storage';
-import { runScript, handleContentMessage, getActiveReplayForTab } from './runner';
+import { runScript, handleContentMessage, getActiveReplayForTab, getRunState, abortRun } from './runner';
 import { initScheduler, syncAllAlarms, scheduleScript, unscheduleScript } from './scheduler';
 import { initDownloads } from './downloads';
 import { deliverToTab } from './inject';
@@ -108,6 +108,11 @@ async function handlePopupMessage(msg: PopupToBackground, _sender: chrome.runtim
       runScript(s).catch((e) => console.error('[webxport] run failed:', e));
       return { type: 'ok' };
     }
+    case 'script/abort':
+      await abortRun();
+      return { type: 'ok' };
+    case 'script/run-state':
+      return { type: 'script/run-state-result', state: getRunState() };
   }
 }
 
@@ -164,6 +169,7 @@ async function endRecording(): Promise<BackgroundToPopup> {
     schedule: { timeOfDay: '' },
     createdAt: session.draft.startedAt,
     updatedAt: Date.now(),
+    runs: [],
   };
   await upsertScript(script);
   await clearDraft();

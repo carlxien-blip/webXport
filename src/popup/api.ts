@@ -1,6 +1,7 @@
 import type {
   PopupToBackground,
   BackgroundToPopup,
+  RunState,
 } from '../shared/messages';
 import type { Script } from '../shared/types';
 
@@ -25,6 +26,15 @@ export async function deleteScript(id: string): Promise<void> {
 
 export async function runScript(id: string): Promise<void> {
   await send({ type: 'script/run', id });
+}
+
+export async function abortScript(): Promise<void> {
+  await send({ type: 'script/abort' });
+}
+
+export async function getRunState(): Promise<RunState> {
+  const r = await send<Extract<BackgroundToPopup, { type: 'script/run-state-result' }>>({ type: 'script/run-state' });
+  return r.state;
 }
 
 export interface RecordingState {
