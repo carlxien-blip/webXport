@@ -10,11 +10,18 @@ interface ActiveSession {
   startedAt: number;
   downloadedFiles: string[];
   lastDoneStepIndex: number;
+  drainEndsAt: number | null;
+  drainTimer: ReturnType<typeof setTimeout> | null;
   resolve: (r: RunResult) => void;
 }
 
 const RUN_TIMEOUT_MS = 5 * 60_000;
 const TAB_LOAD_TIMEOUT_MS = 30_000;
+// After replay/complete, keep active session alive for trailing async downloads
+// (e.g. Xiaohongshu/Taobao back-end "submit task → poll → COS download" pattern).
+// Resets every time noteDownload fires so a chain of files all get archived.
+const DRAIN_INITIAL_MS = 20_000;
+const DRAIN_AFTER_DOWNLOAD_MS = 3_000;
 
 let active: ActiveSession | null = null;
 let isRunning = false;
@@ -32,7 +39,11 @@ export function getActiveReplayForTab(tabId: number): { script: Script; fromInde
 }
 
 export function noteDownload(filename: string): void {
-  if (active) active.downloadedFiles.push(filename);
+  if (!active) return;
+  active.downloadedFiles.push(filename);
+  if (active.drainEndsAt !== null) {
+    active.drainEndsAt = Date.now() + DRAIN_AFTER_DOWNLOAD_MS;
+  }
 }
 
 export async function runScript(script: Script): Promise<RunResult> {
@@ -57,6 +68,9 @@ export async function runScript(script: Script): Promise<RunResult> {
     await recordRunResult(script.id, result);
     return result;
   } finally {
+    if (active?.drainTimer !== null && active?.drainTimer !== undefined) {
+      clearTimeout(active.drainTimer);
+    }
     active = null;
     isRunning = false;
   }
@@ -90,6 +104,8 @@ async function doRun(script: Script, startedAt: number): Promise<RunResult> {
       startedAt,
       downloadedFiles: [],
       lastDoneStepIndex: -1,
+      drainEndsAt: null,
+      drainTimer: null,
       resolve: (r) => {
         clearTimeout(timeout);
         resolve(r);
@@ -126,16 +142,16 @@ export function handleContentMessage(msg: ContentToBackground): void {
   }
 
   if (msg.type === 'replay/complete') {
-    finish({
-      startedAt: active.startedAt,
-      endedAt: Date.now(),
-      status: 'success',
-      downloadedFiles: [...active.downloadedFiles],
-    });
+    if (active.drainEndsAt === null) {
+      console.log('[webxport] replay complete, draining for trailing downloads');
+      active.drainEndsAt = Date.now() + DRAIN_INITIAL_MS;
+      scheduleDrainCheck();
+    }
     return;
   }
 
   if (msg.type === 'replay/step-failed') {
+    cancelDrain();
     finish({
       startedAt: active.startedAt,
       endedAt: Date.now(),
@@ -148,8 +164,47 @@ export function handleContentMessage(msg: ContentToBackground): void {
   }
 }
 
+function scheduleDrainCheck(): void {
+  if (!active || active.drainEndsAt === null) return;
+  if (active.drainTimer !== null) clearTimeout(active.drainTimer);
+  const remaining = active.drainEndsAt - Date.now();
+  if (remaining <= 0) {
+    finalizeDrain();
+    return;
+  }
+  active.drainTimer = setTimeout(() => {
+    if (!active || active.drainEndsAt === null) return;
+    if (Date.now() >= active.drainEndsAt) {
+      finalizeDrain();
+    } else {
+      scheduleDrainCheck();
+    }
+  }, remaining);
+}
+
+function finalizeDrain(): void {
+  if (!active) return;
+  console.log('[webxport] drain complete, files captured:', active.downloadedFiles.length);
+  finish({
+    startedAt: active.startedAt,
+    endedAt: Date.now(),
+    status: 'success',
+    downloadedFiles: [...active.downloadedFiles],
+  });
+}
+
+function cancelDrain(): void {
+  if (!active) return;
+  if (active.drainTimer !== null) {
+    clearTimeout(active.drainTimer);
+    active.drainTimer = null;
+  }
+  active.drainEndsAt = null;
+}
+
 function finish(result: RunResult): void {
   if (!active) return;
+  cancelDrain();
   active.resolve(result);
 }
 
