@@ -1,13 +1,21 @@
 import { startRecording, stopRecording } from './recorder';
-import { replay } from './replayer';
-import type { BackgroundToContent, ContentToBackground, RecCheckReply } from '../shared/messages';
+import { replay, isReplayActive } from './replayer';
+import type { BackgroundToContent, ContentToBackground, StateQueryReply } from '../shared/messages';
 
-const checkMsg: ContentToBackground = { type: 'rec/check' };
+const queryMsg: ContentToBackground = { type: 'state/query' };
 chrome.runtime
-  .sendMessage(checkMsg)
-  .then((reply: RecCheckReply | undefined) => {
-    if (reply?.active) startRecording();
+  .sendMessage(queryMsg)
+  .then((reply: StateQueryReply | undefined) => {
+    if (!reply) {
+      stopRecording();
+      return;
+    }
+    if (reply.recording) startRecording();
     else stopRecording();
+
+    if (reply.replay && !isReplayActive()) {
+      kickoffReplay(reply.replay.script, reply.replay.fromIndex);
+    }
   })
   .catch(() => {
     stopRecording();
@@ -24,12 +32,18 @@ chrome.runtime.onMessage.addListener((msg: BackgroundToContent, _sender, sendRes
       sendResponse({ ok: true });
       return false;
     case 'replay/start':
-      replay(msg.script).catch((e) => {
-        chrome.runtime
-          .sendMessage({ type: 'replay/step-failed', index: -1, error: (e as Error).message })
-          .catch(() => {});
-      });
+      if (!isReplayActive()) {
+        kickoffReplay(msg.script, msg.fromIndex);
+      }
       sendResponse({ ok: true });
       return false;
   }
 });
+
+function kickoffReplay(script: import('../shared/types').Script, fromIndex: number): void {
+  replay(script, fromIndex).catch((e) => {
+    chrome.runtime
+      .sendMessage({ type: 'replay/step-failed', index: fromIndex, error: (e as Error).message })
+      .catch(() => {});
+  });
+}

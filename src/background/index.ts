@@ -3,7 +3,7 @@ import type {
   PopupToBackground,
   BackgroundToPopup,
   BackgroundToContent,
-  RecCheckReply,
+  StateQueryReply,
 } from '../shared/messages';
 import type { RecordingDraft, Script } from '../shared/types';
 import {
@@ -12,7 +12,7 @@ import {
   upsertScript,
   deleteScript,
 } from './storage';
-import { runScript, handleContentMessage } from './runner';
+import { runScript, handleContentMessage, getActiveReplayForTab } from './runner';
 import { initScheduler, syncAllAlarms, scheduleScript, unscheduleScript } from './scheduler';
 import { initDownloads } from './downloads';
 
@@ -40,8 +40,8 @@ chrome.runtime.onMessage.addListener((msg: PopupToBackground | ContentToBackgrou
     return false;
   }
 
-  if (msg.type === 'rec/check') {
-    handleRecCheck(sender).then(sendResponse);
+  if (msg.type === 'state/query') {
+    handleStateQuery(sender).then(sendResponse);
     return true;
   }
 
@@ -51,10 +51,17 @@ chrome.runtime.onMessage.addListener((msg: PopupToBackground | ContentToBackgrou
   return true;
 });
 
-async function handleRecCheck(sender: chrome.runtime.MessageSender): Promise<RecCheckReply> {
+async function handleStateQuery(sender: chrome.runtime.MessageSender): Promise<StateQueryReply> {
   const session = await readDraftSession();
-  const senderTabId = sender.tab?.id;
-  return { active: session !== null && senderTabId === session.tabId };
+  const tabId = sender.tab?.id;
+  const recording = session !== null && tabId === session.tabId;
+
+  let replay: StateQueryReply['replay'];
+  if (tabId !== undefined) {
+    const r = getActiveReplayForTab(tabId);
+    if (r) replay = r;
+  }
+  return { recording, replay };
 }
 
 let appendChain: Promise<void> = Promise.resolve();

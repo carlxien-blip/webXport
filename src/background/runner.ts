@@ -8,6 +8,7 @@ interface ActiveSession {
   tabId: number;
   startedAt: number;
   downloadedFiles: string[];
+  lastDoneStepIndex: number;
   resolve: (r: RunResult) => void;
 }
 
@@ -19,6 +20,14 @@ let isRunning = false;
 
 export function getActiveSession(): ActiveSession | null {
   return active;
+}
+
+export function getActiveReplayForTab(tabId: number): { script: Script; fromIndex: number } | null {
+  if (!active || active.tabId !== tabId) return null;
+  return {
+    script: active.script,
+    fromIndex: active.lastDoneStepIndex + 1,
+  };
 }
 
 export function noteDownload(filename: string): void {
@@ -74,13 +83,14 @@ async function doRun(script: Script, startedAt: number): Promise<RunResult> {
       tabId,
       startedAt,
       downloadedFiles: [],
+      lastDoneStepIndex: -1,
       resolve: (r) => {
         clearTimeout(timeout);
         resolve(r);
       },
     };
 
-    const startMsg: BackgroundToContent = { type: 'replay/start', script };
+    const startMsg: BackgroundToContent = { type: 'replay/start', script, fromIndex: 0 };
     chrome.tabs.sendMessage(tabId, startMsg).catch((e) => {
       clearTimeout(timeout);
       resolve({
@@ -97,6 +107,13 @@ async function doRun(script: Script, startedAt: number): Promise<RunResult> {
 export function handleContentMessage(msg: ContentToBackground): void {
   if (!active) return;
 
+  if (msg.type === 'replay/step-done') {
+    if (msg.index > active.lastDoneStepIndex) {
+      active.lastDoneStepIndex = msg.index;
+    }
+    return;
+  }
+
   if (msg.type === 'replay/complete') {
     finish({
       startedAt: active.startedAt,
@@ -104,7 +121,10 @@ export function handleContentMessage(msg: ContentToBackground): void {
       status: 'success',
       downloadedFiles: [...active.downloadedFiles],
     });
-  } else if (msg.type === 'replay/step-failed') {
+    return;
+  }
+
+  if (msg.type === 'replay/step-failed') {
     finish({
       startedAt: active.startedAt,
       endedAt: Date.now(),
@@ -113,6 +133,7 @@ export function handleContentMessage(msg: ContentToBackground): void {
       failedAtStep: msg.index,
       downloadedFiles: [...active.downloadedFiles],
     });
+    return;
   }
 }
 

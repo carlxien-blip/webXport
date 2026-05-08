@@ -6,19 +6,31 @@ import type { Script, Step, ClickStep, InputStep, WaitStep } from '../shared/typ
 const STEP_TIMEOUT_MS = 15_000;
 const ACTION_GAP_MS = 400;
 
-export async function replay(script: Script): Promise<void> {
-  for (let i = 0; i < script.steps.length; i++) {
-    const step = script.steps[i];
-    try {
-      await runStep(step);
-      reportDone(i);
-    } catch (e) {
-      reportFailed(i, (e as Error).message);
-      return;
+let isActive = false;
+
+export function isReplayActive(): boolean {
+  return isActive;
+}
+
+export async function replay(script: Script, fromIndex: number): Promise<void> {
+  if (isActive) return;
+  isActive = true;
+  try {
+    for (let i = fromIndex; i < script.steps.length; i++) {
+      const step = script.steps[i];
+      try {
+        await runStep(step);
+        reportDone(i);
+      } catch (e) {
+        reportFailed(i, (e as Error).message);
+        return;
+      }
+      await sleep(ACTION_GAP_MS);
     }
-    await sleep(ACTION_GAP_MS);
+    reportComplete();
+  } finally {
+    isActive = false;
   }
-  reportComplete();
 }
 
 async function runStep(step: Step): Promise<void> {
