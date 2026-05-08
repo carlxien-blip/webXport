@@ -3,6 +3,25 @@ import type { SelectorBundle } from './types';
 const STABLE_ATTR_NAMES = ['name', 'role', 'aria-label', 'title', 'placeholder', 'type', 'href'];
 const RANDOM_HASH_RE = /^[a-z]*[-_]?[a-z0-9]{6,}$/i;
 
+// data-* prefixes used by tracking / framework runtime — values change per
+// session or per render and must NOT be encoded into selectors.
+const UNSTABLE_DATA_PREFIXES = [
+  'data-spm-',     // Alibaba SPM tracking (taobao / sycm / 1688 / cainiao etc.)
+  'data-track-',
+  'data-tracker-',
+  'data-trace-',
+  'data-monitor-',
+  'data-react-',   // React internal markers
+  'data-reactid',
+  'data-v-',       // Vue scoped CSS
+  'data-aurelia-',
+  'data-ng-',
+];
+
+function isUnstableDataAttr(name: string): boolean {
+  return UNSTABLE_DATA_PREFIXES.some((p) => name.startsWith(p));
+}
+
 export function buildSelectorBundle(el: Element): SelectorBundle {
   return {
     css: buildCssPath(el),
@@ -24,12 +43,26 @@ export function findElement(bundle: SelectorBundle): Element | null {
 }
 
 function tryCss(bundle: SelectorBundle): Element | null {
+  const exact = querySelectorBest(bundle.css, bundle.textContent);
+  if (exact) return exact;
+
+  // Fallback for recordings made before unstable-attr filtering: strip any
+  // [data-*="..."] segment and try again. Tracking attributes (data-spm-*)
+  // were the most common cause of CSS misses on Alibaba-ecosystem sites.
+  const stripped = bundle.css.replace(/\[data-[\w-]+="[^"]*"\]/g, '');
+  if (stripped !== bundle.css && stripped.trim().length > 0) {
+    return querySelectorBest(stripped, bundle.textContent);
+  }
+  return null;
+}
+
+function querySelectorBest(css: string, textContent: string | null): Element | null {
   try {
-    const matches = document.querySelectorAll(bundle.css);
+    const matches = document.querySelectorAll(css);
     if (matches.length === 1) return matches[0];
-    if (matches.length > 1 && bundle.textContent) {
+    if (matches.length > 1 && textContent) {
       for (const el of Array.from(matches)) {
-        if (extractText(el) === bundle.textContent) return el;
+        if (extractText(el) === textContent) return el;
       }
     }
   } catch {}
@@ -98,7 +131,12 @@ function describeElement(el: Element): string {
   }
 
   for (const attr of Array.from(el.attributes)) {
-    if (attr.name.startsWith('data-') && attr.value && attr.value.length < 40) {
+    if (
+      attr.name.startsWith('data-') &&
+      !isUnstableDataAttr(attr.name) &&
+      attr.value &&
+      attr.value.length < 40
+    ) {
       s += `[${attr.name}="${attr.value.replaceAll('"', '\\"')}"]`;
       break;
     }
@@ -136,7 +174,9 @@ function collectAttrs(el: Element): Record<string, string> {
     if (v) out[a] = v;
   }
   for (const a of Array.from(el.attributes)) {
-    if (a.name.startsWith('data-') && a.value) out[a.name] = a.value;
+    if (a.name.startsWith('data-') && !isUnstableDataAttr(a.name) && a.value) {
+      out[a.name] = a.value;
+    }
   }
   return out;
 }

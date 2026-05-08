@@ -79,12 +79,46 @@ async function runWait(step: WaitStep): Promise<void> {
 
 async function waitForElement(selector: import('../shared/types').SelectorBundle, timeoutMs: number): Promise<Element> {
   const start = Date.now();
+  let triedHoverReveal = false;
   while (Date.now() - start < timeoutMs) {
     const el = findElement(selector);
-    if (el && isInteractable(el)) return el;
+    if (el) {
+      if (isInteractable(el)) return el;
+
+      // Element exists but is hidden — try once to reveal it by dispatching
+      // hover events up the ancestor chain. Works for JS-driven menus that
+      // listen to mouseenter/pointerover; pure CSS :hover menus stay shut.
+      if (!triedHoverReveal) {
+        triedHoverReveal = true;
+        console.log('[webxport] target hidden, attempting hover reveal');
+        revealByAncestorHover(el);
+        await sleep(400);
+        const refound = findElement(selector);
+        if (refound && isInteractable(refound)) return refound;
+      }
+    }
     await sleep(150);
   }
   throw new Error(`超时未找到元素（${timeoutMs}ms）：${selector.css.slice(0, 80)}`);
+}
+
+function revealByAncestorHover(target: Element): void {
+  let curr: Element | null = target;
+  while (curr && curr !== document.body) {
+    dispatchHoverEvents(curr);
+    curr = curr.parentElement;
+  }
+}
+
+function dispatchHoverEvents(el: Element): void {
+  const mouseInit: MouseEventInit = { bubbles: true, cancelable: true, view: window };
+  el.dispatchEvent(new MouseEvent('mouseover', mouseInit));
+  el.dispatchEvent(new MouseEvent('mouseenter', { ...mouseInit, bubbles: false }));
+  if (typeof PointerEvent !== 'undefined') {
+    const ptr: PointerEventInit = { bubbles: true, cancelable: true, view: window, pointerType: 'mouse' };
+    el.dispatchEvent(new PointerEvent('pointerover', ptr));
+    el.dispatchEvent(new PointerEvent('pointerenter', { ...ptr, bubbles: false }));
+  }
 }
 
 function isInteractable(el: Element): boolean {
