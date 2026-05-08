@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.guokelicity.juguang-export</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/carl/Desktop/果壳里的城/Data OS/pipelines/auto_export/juguang_daily_export.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/carl/Desktop/果壳里的城/Data OS/pipelines/auto_export</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>10</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/carl/Desktop/果壳里的城/Data OS/logs/juguang/launchd-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/carl/Desktop/果壳里的城/Data OS/logs/juguang/launchd-stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

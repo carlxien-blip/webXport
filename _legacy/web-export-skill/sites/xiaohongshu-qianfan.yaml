@@ -1,0 +1,46 @@
+# 小红书千帆 — ark.xiaohongshu.com
+# 首次记录：2026-05-06，基于 note_daily_register.py 实战经验
+
+site: 小红书千帆
+domain: ark.xiaohongshu.com
+last_success: "2026-05-07"
+
+auth_check:
+  indicator: login
+  session_fallback: creator.xiaohongshu.com
+
+tasks:
+  - name: 商品笔记数据
+    aliases: ["千帆笔记", "笔记数据", "笔记报表"]
+    url: "https://ark.xiaohongshu.com/app-datacenter/note-data/goods"
+
+    steps:
+      - action: wait_ready
+        timeout: 10
+
+      - action: scroll_to_text
+        text: "笔记列表"
+
+      - action: click_text
+        text: "下载数据"
+        selector: "span, button"
+        visibility:
+          top_min: 50
+          top_max: 500
+
+      - action: wait_download
+        filename_pattern: "商品笔记数据-*.xlsx"
+        timeout: 90
+
+    output:
+      filename_pattern: "商品笔记数据-*.xlsx"
+      file_format: xlsx
+
+    notes: |
+      下载的 Excel 始终是全量数据（所有时间段、所有商品），共 38 列。
+      不受页面 UI 上的「发布时间」筛选影响，需要 Python 侧按日期过滤。
+      文件名自带日期：商品笔记数据-(YYYY-MM-DD).xlsx
+
+      页面有两个「下载数据」按钮，只有 top>50 的那个在笔记列表区域可见。
+      下载是异步任务（long_task/task/submit → 轮询 → COS 下载），通常 5-15 秒。
+      如果没有 ark tab，可从 creator.xiaohongshu.com 的 tab 导航过去共享 session。
