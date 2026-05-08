@@ -1,6 +1,7 @@
 import type { Script, RunResult } from '../shared/types';
 import type { BackgroundToContent, ContentToBackground } from '../shared/messages';
 import { recordRunResult } from './storage';
+import { deliverToTab } from './inject';
 
 interface ActiveSession {
   scriptId: string;
@@ -96,7 +97,7 @@ async function doRun(script: Script, startedAt: number): Promise<RunResult> {
     };
 
     const startMsg: BackgroundToContent = { type: 'replay/start', script, fromIndex: 0 };
-    chrome.tabs.sendMessage(tabId, startMsg).then(
+    deliverToTab(tabId, startMsg).then(
       () => console.log('[webxport] doRun: replay/start delivered'),
       (e) => {
         console.log('[webxport] doRun: replay/start delivery failed:', (e as Error).message);

@@ -15,6 +15,7 @@ import {
 import { runScript, handleContentMessage, getActiveReplayForTab } from './runner';
 import { initScheduler, syncAllAlarms, scheduleScript, unscheduleScript } from './scheduler';
 import { initDownloads } from './downloads';
+import { deliverToTab } from './inject';
 
 const DRAFT_KEY = 'webxport.draft';
 
@@ -127,10 +128,10 @@ async function beginRecording(tabId: number, name: string): Promise<BackgroundTo
 
   const startMsg: BackgroundToContent = { type: 'rec/start' };
   try {
-    await chrome.tabs.sendMessage(tabId, startMsg);
-  } catch {
+    await deliverToTab(tabId, startMsg);
+  } catch (e) {
     await clearDraft();
-    return { type: 'error', error: '无法连接到目标 tab，请刷新页面后重试' };
+    return { type: 'error', error: `无法连接到目标 tab：${(e as Error).message}` };
   }
   return { type: 'ok' };
 }
