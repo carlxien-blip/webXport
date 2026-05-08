@@ -8,7 +8,7 @@ export type ContentToBackground =
   | { type: 'replay/complete' };
 
 export type BackgroundToContent =
-  | { type: 'rec/start' }
+  | { type: 'rec/start'; name: string; stepCount: number }
   | { type: 'rec/stop' }
   | { type: 'replay/start'; script: Script; fromIndex: number };
 
@@ -31,7 +31,7 @@ export type BackgroundToPopup =
   | { type: 'script/get-result'; script: Script | null };
 
 export interface StateQueryReply {
-  recording: boolean;
+  recording: false | { name: string; stepCount: number };
   replay?: { script: Script; fromIndex: number };
 }
 

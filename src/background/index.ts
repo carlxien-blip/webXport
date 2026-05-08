@@ -55,7 +55,11 @@ chrome.runtime.onMessage.addListener((msg: PopupToBackground | ContentToBackgrou
 async function handleStateQuery(sender: chrome.runtime.MessageSender): Promise<StateQueryReply> {
   const session = await readDraftSession();
   const tabId = sender.tab?.id;
-  const recording = session !== null && tabId === session.tabId;
+
+  const recording: StateQueryReply['recording'] =
+    session !== null && tabId === session.tabId
+      ? { name: session.draft.name, stepCount: session.draft.steps.length }
+      : false;
 
   let replay: StateQueryReply['replay'];
   if (tabId !== undefined) {
@@ -126,7 +130,7 @@ async function beginRecording(tabId: number, name: string): Promise<BackgroundTo
   };
   await writeDraft(draft, tabId);
 
-  const startMsg: BackgroundToContent = { type: 'rec/start' };
+  const startMsg: BackgroundToContent = { type: 'rec/start', name: draft.name, stepCount: 0 };
   try {
     await deliverToTab(tabId, startMsg);
   } catch (e) {

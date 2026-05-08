@@ -11,7 +11,7 @@ chrome.runtime
       stopRecording();
       return;
     }
-    if (reply.recording) startRecording();
+    if (reply.recording) startRecording(reply.recording.name, reply.recording.stepCount);
     else stopRecording();
 
     if (reply.replay && !isReplayActive()) {
@@ -26,7 +26,7 @@ chrome.runtime
 chrome.runtime.onMessage.addListener((msg: BackgroundToContent, _sender, sendResponse) => {
   switch (msg.type) {
     case 'rec/start':
-      startRecording();
+      startRecording(msg.name, msg.stepCount);
       sendResponse({ ok: true });
       return false;
     case 'rec/stop':
