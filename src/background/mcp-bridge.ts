@@ -13,76 +13,85 @@ interface PoolEntry {
 }
 
 const pool: Map<number, PoolEntry> = new Map();
-const probing: Set<number> = new Set();
-let retryDone = false;
+let scanning = false;
 
-export function ensureMcpConnected(): void {
-  scanOnce();
-  // Single delayed retry — covers "Claude Code is mid-boot, MCP server
-  // not listening yet". After this we stop. The user can re-trigger by
-  // opening the popup (which wakes SW and re-runs this function).
-  if (!retryDone) {
-    retryDone = true;
-    setTimeout(() => {
-      scanOnce();
-    }, RETRY_DELAY_MS);
-  }
-}
-
-function scanOnce(): void {
-  for (const port of PORT_RANGE) {
-    if (pool.has(port) || probing.has(port)) continue;
-    tryConnect(port);
-  }
-}
-
-function tryConnect(port: number): void {
-  probing.add(port);
-  let confirmed = false;
-  let ws: WebSocket;
+export async function ensureMcpConnected(): Promise<void> {
+  if (scanning) return;
+  scanning = true;
   try {
-    ws = new WebSocket(`ws://${HOST}:${port}`);
-  } catch {
-    probing.delete(port);
-    return;
+    await scanSequential();
+    if (pool.size === 0) {
+      await new Promise<void>((r) => setTimeout(r, RETRY_DELAY_MS));
+      await scanSequential();
+    }
+  } finally {
+    scanning = false;
   }
+}
 
-  const probeTimeout = setTimeout(() => {
-    if (!confirmed) ws.close();
-  }, PROBE_TIMEOUT_MS);
+async function scanSequential(): Promise<void> {
+  for (const port of PORT_RANGE) {
+    if (pool.has(port)) continue;
+    const ok = await tryConnect(port);
+    if (!ok) break;
+  }
+}
 
-  ws.addEventListener('message', (e) => {
-    const data = typeof e.data === 'string' ? e.data : '';
-    if (!confirmed) {
-      clearTimeout(probeTimeout);
-      try {
-        const msg = JSON.parse(data);
-        if (msg && msg.type === 'webxport-server-hello') {
-          confirmed = true;
-          probing.delete(port);
-          pool.set(port, { ws, port });
-          console.log('[webxport mcp] connected on port', port);
-          return;
-        }
-      } catch {}
-      ws.close();
+function tryConnect(port: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(`ws://${HOST}:${port}`);
+    } catch {
+      resolve(false);
       return;
     }
-    void onRpcMessage(ws, data);
-  });
 
-  ws.addEventListener('close', () => {
-    clearTimeout(probeTimeout);
-    probing.delete(port);
-    if (confirmed) {
-      pool.delete(port);
-      console.log('[webxport mcp] disconnected from port', port);
-    }
-  });
+    let confirmed = false;
+    let settled = false;
 
-  ws.addEventListener('error', () => {
-    // Silent: probing nonexistent ports always errors. Only "confirmed
-    // then dropped" is interesting and is logged in the close handler.
+    const settle = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (!ok && ws.readyState !== WebSocket.CLOSED) ws.close();
+      resolve(ok);
+    };
+
+    const probeTimeout = setTimeout(() => settle(false), PROBE_TIMEOUT_MS);
+
+    ws.addEventListener('message', (e) => {
+      const data = typeof e.data === 'string' ? e.data : '';
+      if (!confirmed) {
+        clearTimeout(probeTimeout);
+        try {
+          const msg = JSON.parse(data);
+          if (msg && msg.type === 'webxport-server-hello') {
+            confirmed = true;
+            pool.set(port, { ws, port });
+            console.log('[webxport mcp] connected on port', port);
+            settle(true);
+            return;
+          }
+        } catch {}
+        settle(false);
+        return;
+      }
+      void onRpcMessage(ws, data);
+    });
+
+    ws.addEventListener('close', () => {
+      clearTimeout(probeTimeout);
+      if (confirmed) {
+        pool.delete(port);
+        console.log('[webxport mcp] disconnected from port', port);
+      } else {
+        settle(false);
+      }
+    });
+
+    ws.addEventListener('error', () => {
+      // close will fire next; settle there
+    });
   });
 }
 
