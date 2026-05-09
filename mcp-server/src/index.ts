@@ -35,3 +35,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 const transport = new StdioServerTransport();
 await server.connect(transport);
 process.stderr.write('[webxport-mcp] MCP server ready on stdio\n');
+
+// When the MCP client (Claude Code) disconnects, stdin is closed. Exit
+// promptly so we don't leak as a zombie that holds port 7654 hostage for
+// future spawns.
+const exitOnStdinClose = () => {
+  process.stderr.write('[webxport-mcp] stdin closed, exiting\n');
+  process.exit(0);
+};
+process.stdin.on('end', exitOnStdinClose);
+process.stdin.on('close', exitOnStdinClose);

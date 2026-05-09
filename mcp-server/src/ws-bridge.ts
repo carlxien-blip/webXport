@@ -25,8 +25,18 @@ class WSBridge {
   constructor() {
     this.wss = new WebSocketServer({ host: HOST, port: PORT });
     this.wss.on('connection', (ws) => this.onConnection(ws));
-    this.wss.on('error', (e) => console.error('[webxport-mcp] WSS error:', e));
-    process.stderr.write(`[webxport-mcp] WS bridge listening on ${HOST}:${PORT}\n`);
+    this.wss.on('error', (e: NodeJS.ErrnoException) => {
+      if (e.code === 'EADDRINUSE') {
+        process.stderr.write(
+          `[webxport-mcp] port ${PORT} already in use — another webxport MCP server is running. exiting.\n`
+        );
+        process.exit(1);
+      }
+      console.error('[webxport-mcp] WSS error:', e);
+    });
+    this.wss.on('listening', () => {
+      process.stderr.write(`[webxport-mcp] WS bridge listening on ${HOST}:${PORT}\n`);
+    });
   }
 
   private onConnection(ws: WebSocket): void {
