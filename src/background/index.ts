@@ -16,16 +16,20 @@ import { runScript, handleContentMessage, getActiveReplayForTab, getRunState, ab
 import { initScheduler, syncAllAlarms, scheduleScript, unscheduleScript } from './scheduler';
 import { initDownloads } from './downloads';
 import { deliverToTab } from './inject';
+import { ensureMcpConnected } from './mcp-bridge';
 
 const DRAFT_KEY = 'webxport.draft';
 
 initScheduler();
 initDownloads();
+ensureMcpConnected();
 chrome.runtime.onInstalled.addListener(() => {
   void syncAllAlarms();
+  ensureMcpConnected();
 });
 chrome.runtime.onStartup.addListener(() => {
   void syncAllAlarms();
+  ensureMcpConnected();
 });
 
 chrome.runtime.onMessage.addListener((msg: PopupToBackground | ContentToBackground, sender, sendResponse) => {
