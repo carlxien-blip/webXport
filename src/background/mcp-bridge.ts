@@ -5,7 +5,7 @@ import type { Script, RunResult } from '../shared/types';
 const HOST = '127.0.0.1';
 const PORT_RANGE = [7654, 7655, 7656, 7657, 7658, 7659];
 const PROBE_TIMEOUT_MS = 1000;
-const RECONNECT_DELAY_MS = 5000;
+const RETRY_DELAY_MS = 5000;
 
 interface PoolEntry {
   ws: WebSocket;
@@ -14,14 +14,26 @@ interface PoolEntry {
 
 const pool: Map<number, PoolEntry> = new Map();
 const probing: Set<number> = new Set();
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let retryDone = false;
 
 export function ensureMcpConnected(): void {
+  scanOnce();
+  // Single delayed retry — covers "Claude Code is mid-boot, MCP server
+  // not listening yet". After this we stop. The user can re-trigger by
+  // opening the popup (which wakes SW and re-runs this function).
+  if (!retryDone) {
+    retryDone = true;
+    setTimeout(() => {
+      scanOnce();
+    }, RETRY_DELAY_MS);
+  }
+}
+
+function scanOnce(): void {
   for (const port of PORT_RANGE) {
     if (pool.has(port) || probing.has(port)) continue;
     tryConnect(port);
   }
-  scheduleReconnect();
 }
 
 function tryConnect(port: number): void {
@@ -72,14 +84,6 @@ function tryConnect(port: number): void {
     // Silent: probing nonexistent ports always errors. Only "confirmed
     // then dropped" is interesting and is logged in the close handler.
   });
-}
-
-function scheduleReconnect(): void {
-  if (reconnectTimer !== null) clearTimeout(reconnectTimer);
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    ensureMcpConnected();
-  }, RECONNECT_DELAY_MS);
 }
 
 async function onRpcMessage(ws: WebSocket, data: string): Promise<void> {
