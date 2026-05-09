@@ -6,7 +6,9 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { TOOLS, handleTool } from './tools.js';
-import './ws-bridge.js';
+import { bridge } from './ws-bridge.js';
+
+await bridge.init();
 
 const server = new Server(
   { name: 'webxport', version: '0.1.0' },
@@ -34,11 +36,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-process.stderr.write('[webxport-mcp] MCP server ready on stdio\n');
+process.stderr.write(`[webxport-mcp] MCP server ready on stdio (port ${bridge.getPort()})\n`);
 
-// When the MCP client (Claude Code) disconnects, stdin is closed. Exit
-// promptly so we don't leak as a zombie that holds port 7654 hostage for
-// future spawns.
 const exitOnStdinClose = () => {
   process.stderr.write('[webxport-mcp] stdin closed, exiting\n');
   process.exit(0);

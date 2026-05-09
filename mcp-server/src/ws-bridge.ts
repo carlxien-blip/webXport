@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 
-const PORT = Number(process.env.WEBXPORT_MCP_PORT ?? 7654);
+const PORT_RANGE_START = 7654;
+const PORT_RANGE_END = 7659;
 const HOST = '127.0.0.1';
 
 interface PendingCall {
@@ -17,39 +18,70 @@ interface RpcReply {
 }
 
 class WSBridge {
-  private wss: WebSocketServer;
+  private wss: WebSocketServer | null = null;
+  private port: number = -1;
   private extensionWs: WebSocket | null = null;
   private nextId = 1;
   private pending = new Map<number, PendingCall>();
 
-  constructor() {
-    this.wss = new WebSocketServer({ host: HOST, port: PORT });
-    this.wss.on('connection', (ws) => this.onConnection(ws));
-    this.wss.on('error', (e: NodeJS.ErrnoException) => {
-      if (e.code === 'EADDRINUSE') {
-        process.stderr.write(
-          `[webxport-mcp] port ${PORT} already in use — another webxport MCP server is running. exiting.\n`
-        );
-        process.exit(1);
+  async init(): Promise<void> {
+    const envPort = process.env.WEBXPORT_MCP_PORT;
+    if (envPort) {
+      const port = Number(envPort);
+      this.wss = await this.bindPort(port);
+      this.port = port;
+    } else {
+      for (let port = PORT_RANGE_START; port <= PORT_RANGE_END; port++) {
+        try {
+          this.wss = await this.bindPort(port);
+          this.port = port;
+          break;
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw e;
+        }
       }
-      console.error('[webxport-mcp] WSS error:', e);
-    });
-    this.wss.on('listening', () => {
-      process.stderr.write(`[webxport-mcp] WS bridge listening on ${HOST}:${PORT}\n`);
+    }
+    if (!this.wss) {
+      throw new Error(
+        `[webxport-mcp] no free port available in ${PORT_RANGE_START}-${PORT_RANGE_END}; if you have many Claude Code sessions, restart some.`
+      );
+    }
+    process.stderr.write(`[webxport-mcp] WS bridge listening on ${HOST}:${this.port}\n`);
+    this.wss.on('connection', (ws) => this.onConnection(ws));
+    this.wss.on('error', (e) => console.error('[webxport-mcp] WSS error:', e));
+  }
+
+  private bindPort(port: number): Promise<WebSocketServer> {
+    return new Promise((resolve, reject) => {
+      const server = new WebSocketServer({ host: HOST, port });
+      const onListening = () => {
+        server.off('error', onError);
+        resolve(server);
+      };
+      const onError = (e: Error) => {
+        server.off('listening', onListening);
+        reject(e);
+      };
+      server.once('listening', onListening);
+      server.once('error', onError);
     });
   }
 
   private onConnection(ws: WebSocket): void {
-    process.stderr.write('[webxport-mcp] extension connected\n');
+    process.stderr.write(`[webxport-mcp] extension connected on port ${this.port}\n`);
     if (this.extensionWs && this.extensionWs.readyState === WebSocket.OPEN) {
       this.extensionWs.close(1000, 'replaced by new extension instance');
     }
     this.extensionWs = ws;
 
+    ws.send(
+      JSON.stringify({ type: 'webxport-server-hello', port: this.port, version: '0.1.0' })
+    );
+
     ws.on('message', (data) => this.onMessage(data.toString()));
     ws.on('close', () => {
       if (this.extensionWs === ws) this.extensionWs = null;
-      process.stderr.write('[webxport-mcp] extension disconnected\n');
+      process.stderr.write(`[webxport-mcp] extension disconnected from port ${this.port}\n`);
       for (const [id, p] of this.pending) {
         clearTimeout(p.timeout);
         p.reject(new Error('extension disconnected mid-call'));
@@ -94,6 +126,10 @@ class WSBridge {
 
   isConnected(): boolean {
     return this.extensionWs !== null && this.extensionWs.readyState === WebSocket.OPEN;
+  }
+
+  getPort(): number {
+    return this.port;
   }
 }
 

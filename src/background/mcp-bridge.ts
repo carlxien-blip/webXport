@@ -2,69 +2,94 @@ import { listScripts } from './storage';
 import { runScript, getRunState } from './runner';
 import type { Script, RunResult } from '../shared/types';
 
-const MCP_URL = 'ws://127.0.0.1:7654';
+const HOST = '127.0.0.1';
+const PORT_RANGE = [7654, 7655, 7656, 7657, 7658, 7659];
+const PROBE_TIMEOUT_MS = 1000;
 const RECONNECT_DELAY_MS = 5000;
 
-interface RpcMessage {
-  type: 'rpc';
-  id: number;
-  method: string;
-  params: Record<string, unknown>;
+interface PoolEntry {
+  ws: WebSocket;
+  port: number;
 }
 
-let ws: WebSocket | null = null;
+const pool: Map<number, PoolEntry> = new Map();
+const probing: Set<number> = new Set();
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let suppressLog = false;
 
 export function ensureMcpConnected(): void {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-    return;
+  for (const port of PORT_RANGE) {
+    if (pool.has(port) || probing.has(port)) continue;
+    tryConnect(port);
   }
-  connect();
+  scheduleReconnect();
 }
 
-function connect(): void {
+function tryConnect(port: number): void {
+  probing.add(port);
+  let confirmed = false;
+  let ws: WebSocket;
   try {
-    ws = new WebSocket(MCP_URL);
-    ws.addEventListener('open', () => {
-      console.log('[webxport mcp] connected to', MCP_URL);
-      suppressLog = false;
-    });
-    ws.addEventListener('close', () => {
-      if (!suppressLog) console.log('[webxport mcp] disconnected, will retry');
-      ws = null;
-      scheduleReconnect();
-    });
-    ws.addEventListener('error', () => {
-      if (!suppressLog) console.log('[webxport mcp] connection failed (MCP server probably not running)');
-      suppressLog = true;
-    });
-    ws.addEventListener('message', (e) => {
-      void onMessage(typeof e.data === 'string' ? e.data : '');
-    });
-  } catch (e) {
-    if (!suppressLog) console.log('[webxport mcp] connect threw:', (e as Error).message);
-    suppressLog = true;
-    scheduleReconnect();
+    ws = new WebSocket(`ws://${HOST}:${port}`);
+  } catch {
+    probing.delete(port);
+    return;
   }
+
+  const probeTimeout = setTimeout(() => {
+    if (!confirmed) ws.close();
+  }, PROBE_TIMEOUT_MS);
+
+  ws.addEventListener('message', (e) => {
+    const data = typeof e.data === 'string' ? e.data : '';
+    if (!confirmed) {
+      clearTimeout(probeTimeout);
+      try {
+        const msg = JSON.parse(data);
+        if (msg && msg.type === 'webxport-server-hello') {
+          confirmed = true;
+          probing.delete(port);
+          pool.set(port, { ws, port });
+          console.log('[webxport mcp] connected on port', port);
+          return;
+        }
+      } catch {}
+      ws.close();
+      return;
+    }
+    void onRpcMessage(ws, data);
+  });
+
+  ws.addEventListener('close', () => {
+    clearTimeout(probeTimeout);
+    probing.delete(port);
+    if (confirmed) {
+      pool.delete(port);
+      console.log('[webxport mcp] disconnected from port', port);
+    }
+  });
+
+  ws.addEventListener('error', () => {
+    // Silent: probing nonexistent ports always errors. Only "confirmed
+    // then dropped" is interesting and is logged in the close handler.
+  });
 }
 
 function scheduleReconnect(): void {
   if (reconnectTimer !== null) clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    connect();
+    ensureMcpConnected();
   }, RECONNECT_DELAY_MS);
 }
 
-async function onMessage(text: string): Promise<void> {
-  let msg: RpcMessage;
+async function onRpcMessage(ws: WebSocket, data: string): Promise<void> {
+  let msg: { type?: string; id?: number; method?: string; params?: Record<string, unknown> };
   try {
-    msg = JSON.parse(text);
+    msg = JSON.parse(data);
   } catch {
     return;
   }
-  if (msg.type !== 'rpc') return;
+  if (msg.type !== 'rpc' || typeof msg.id !== 'number' || !msg.method) return;
 
   let result: unknown;
   let error: string | undefined;
@@ -73,10 +98,11 @@ async function onMessage(text: string): Promise<void> {
   } catch (e) {
     error = (e as Error).message;
   }
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    const payload = error !== undefined
-      ? { type: 'rpc-reply', id: msg.id, error }
-      : { type: 'rpc-reply', id: msg.id, result };
+  if (ws.readyState === WebSocket.OPEN) {
+    const payload =
+      error !== undefined
+        ? { type: 'rpc-reply', id: msg.id, error }
+        : { type: 'rpc-reply', id: msg.id, result };
     ws.send(JSON.stringify(payload));
   }
 }
