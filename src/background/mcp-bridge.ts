@@ -5,7 +5,9 @@ import type { Script, RunResult } from '../shared/types';
 const HOST = '127.0.0.1';
 const PORT_RANGE = [7654, 7655, 7656, 7657, 7658, 7659];
 const PROBE_TIMEOUT_MS = 1000;
-const RETRY_DELAY_MS = 5000;
+const SCAN_ALARM = 'webxport.mcp.scan';
+const SCAN_PERIOD_MIN = 1;
+const SCAN_DEBOUNCE_MS = 5_000;
 
 interface PoolEntry {
   ws: WebSocket;
@@ -14,26 +16,45 @@ interface PoolEntry {
 
 const pool: Map<number, PoolEntry> = new Map();
 let scanning = false;
+let lastScanAt = 0;
 
 export async function ensureMcpConnected(): Promise<void> {
+  await scheduleScanAlarm();
+  await scanOnce();
+}
+
+async function scheduleScanAlarm(): Promise<void> {
+  const existing = await chrome.alarms.get(SCAN_ALARM);
+  if (!existing) {
+    await chrome.alarms.create(SCAN_ALARM, { periodInMinutes: SCAN_PERIOD_MIN });
+  }
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === SCAN_ALARM) void scanOnce();
+});
+
+async function scanOnce(): Promise<void> {
   if (scanning) return;
+  if (Date.now() - lastScanAt < SCAN_DEBOUNCE_MS) return;
   scanning = true;
+  lastScanAt = Date.now();
   try {
-    await scanSequential();
-    if (pool.size === 0) {
-      await new Promise<void>((r) => setTimeout(r, RETRY_DELAY_MS));
-      await scanSequential();
+    prunePool();
+    // MCP server 总是绑最低空端口，遇到第一个 refused 就停——只产生 1 条 error log
+    for (const port of PORT_RANGE) {
+      if (pool.has(port)) continue;
+      const ok = await tryConnect(port);
+      if (!ok) break;
     }
   } finally {
     scanning = false;
   }
 }
 
-async function scanSequential(): Promise<void> {
-  for (const port of PORT_RANGE) {
-    if (pool.has(port)) continue;
-    const ok = await tryConnect(port);
-    if (!ok) break;
+function prunePool(): void {
+  for (const [port, entry] of pool) {
+    if (entry.ws.readyState !== WebSocket.OPEN) pool.delete(port);
   }
 }
 

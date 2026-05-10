@@ -81,6 +81,7 @@ function queueAppendStep(step: import('../shared/types').Step): void {
 }
 
 async function handlePopupMessage(msg: PopupToBackground, _sender: chrome.runtime.MessageSender): Promise<BackgroundToPopup> {
+  void ensureMcpConnected();
   switch (msg.type) {
     case 'rec/begin':
       return beginRecording(msg.tabId, msg.name);

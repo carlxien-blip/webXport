@@ -1,6 +1,6 @@
 # webXport
 
-> Chrome 插件。在用户**已登录**的浏览器里录制一次操作流程，定时重放，把电商/自媒体后台的数据报表下载到本地。
+> Chrome 插件。把用户**已登录**的浏览器通过 MCP 协议暴露给 AI agent（Claude Code / Cursor / Codex 等），构成"AI 数据自动收集 + 分析"工作流的「收集」环。基础能力（录制 / 定时 / 本地下载）永远免费；MCP 接入和跨设备脚本云同步是付费的高阶能力。
 
 ## 产品红线（不可违反）
 
@@ -8,10 +8,34 @@
 
 - ❌ 不要尝试自动登录、不要存密码、不要做 cookie 注入
 - ❌ 不要做"无头模式"或"独立浏览器"
-- ❌ 不要在主链路里调用任何 LLM / AI（成本、隐私、不确定性，详见 `docs/scope.md`）
+- ❌ 扩展不内置任何 AI 能力。AI 永远是 *调用方*（agent 通过 MCP 用本扩展），不是 *被调方*。扩展自身不发起任何 LLM 调用（成本、隐私、不确定性，详见 `docs/scope.md`）
+- ❌ 不要做"官方脚本库 / 内置模板"。脚本永远是用户自己录的——平台 UI 一改模板就废，每个用户要的报表也不同
 - ❌ 不要执行不可逆动作——执行步骤前必须经过 `src/shared/safety.ts` 的关键字检查
 
 违反任何一条之前先和用户对齐。
+
+## 产品形态与商业模式
+
+**形态**：
+- 核心：Chrome 扩展 + MCP server（用户本地，stdio + WebSocket bridge）
+- 后端（付费版必须）：账号 + 订阅校验 + 跨设备脚本云同步
+- AI agent 是消费方，不是产品的一部分——用户自己接 Claude Code / Cursor / Codex / 任何 MCP-capable agent
+
+**付费墙**：
+
+| | 免费版 | 付费版（¥30/月 或 ¥288/年） |
+|---|---|---|
+| 录制 / 重放 / 定时 / 本地下载 | ✅ 无限 | ✅ 无限 |
+| 脚本数量 | 无限 | 无限 |
+| MCP 接入（让 AI 调用） | ❌ | ✅ |
+| 多设备脚本云同步 | ❌ | ✅ |
+
+新用户 14 天 MCP 全功能试用。试用结束 / license 失效 → 扩展继续可用，仅 MCP 接口拒绝调用并返回提示。后端不可达时给 7 天宽限期，避免后端挂了用户也跟着挂。
+
+**支付方式**（国内独立开发者现实）：
+- MVP 阶段（前 100 个付费用户）：手动发激活码。用户加微信 / 转账 → 后台 grant license → 用户在扩展粘贴
+- 月新增稳定 > 30 后再上 Creem 或 Paddle 这类海外 MoR 自动化收款（能收人民币，免营业执照）
+- ❌ 不直连微信支付 / 支付宝——要营业执照 + 对公账户，与 V1 节奏不匹配
 
 ## 仓库结构
 
@@ -41,6 +65,13 @@ webXport/
 │   │   ├── scheduler.ts   chrome.alarms 调度
 │   │   └── downloads.ts   下载监听 + 文件归档
 │   └── popup/             弹窗 UI（React）
+├── mcp-server/            MCP server（stdio ↔ WebSocket bridge）
+│   ├── src/
+│   │   ├── index.ts       MCP server 入口
+│   │   ├── tools.ts       4 个工具：list_scripts / run_script / get_runs / get_run_status
+│   │   └── ws-bridge.ts   WebSocket 桥，把 RPC 转给 Chrome 扩展
+│   └── dist/              编译产物，注册到 Claude Code / Cursor 用
+├── backend/               后端（V1 必备）：账号 + license 校验 + 脚本云同步
 └── _legacy/               旧 Python+CDP 实现（可参考，不维护）
     ├── python_scripts/
     ├── cdp_proxy/

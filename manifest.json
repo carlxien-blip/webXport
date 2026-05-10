@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "webXport",
   "version": "0.1.0",
-  "description": "在已登录的浏览器里录制操作，定时重放下载数据报表",
+  "description": "录制 + 定时下载登录态后台数据报表；通过 MCP 协议暴露给 Claude Code / Cursor 等 AI agent",
   "permissions": [
     "storage",
     "alarms",
