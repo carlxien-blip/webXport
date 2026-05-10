@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Script, RunResult } from '../shared/types';
-import type { RunState } from '../shared/messages';
+import type { RunState, LicenseStatusWire } from '../shared/messages';
 import {
   listScripts,
   deleteScript,
@@ -13,6 +13,9 @@ import {
   getActiveTabId,
   abortScript,
   getRunState,
+  getLicense,
+  applyLicense,
+  clearLicense,
   type RecordingState,
 } from './api';
 
@@ -25,14 +28,16 @@ export function App() {
   const [scripts, setScripts] = useState<Script[]>([]);
   const [rec, setRec] = useState<RecordingState>({ recording: false });
   const [run, setRun] = useState<RunState>({ running: false });
+  const [license, setLicense] = useState<LicenseStatusWire | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
-      const [s, r, rs] = await Promise.all([listScripts(), getRecordingState(), getRunState()]);
+      const [s, r, rs, lc] = await Promise.all([listScripts(), getRecordingState(), getRunState(), getLicense()]);
       setScripts(s);
       setRec(r);
       setRun(rs);
+      setLicense(lc);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -47,6 +52,17 @@ export function App() {
   return (
     <div className="p-3 flex flex-col gap-3">
       <Header />
+      <LicenseBar
+        status={license}
+        onApply={async (lic) => {
+          const next = await applyLicense(lic);
+          setLicense(next);
+        }}
+        onClear={async () => {
+          const next = await clearLicense();
+          setLicense(next);
+        }}
+      />
       {error && <ErrorBar message={error} onClose={() => setError(null)} />}
 
       {run.running && (
@@ -123,6 +139,110 @@ function Header() {
       <span className="text-xs text-neutral-500">已登录浏览器中的录制重放</span>
     </div>
   );
+}
+
+function LicenseBar({
+  status,
+  onApply,
+  onClear,
+}: {
+  status: LicenseStatusWire | null;
+  onApply: (license: string) => Promise<void>;
+  onClear: () => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const tone = !status ? 'neutral'
+    : status.kind === 'paid' ? 'paid'
+      : status.kind === 'trial' ? 'trial'
+        : 'expired';
+
+  const colorMap = {
+    paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    trial: 'bg-blue-50 text-blue-700 border-blue-200',
+    expired: 'bg-red-50 text-red-700 border-red-200',
+    neutral: 'bg-neutral-50 text-neutral-600 border-neutral-200',
+  };
+
+  return (
+    <div className={`border rounded text-xs ${colorMap[tone]}`}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-2 py-1 flex items-center gap-2"
+      >
+        <span className="flex-1 text-left">{licenseSummary(status)}</span>
+        <span className="opacity-60">{expanded ? '▾' : '▸'}</span>
+      </button>
+      {expanded && (
+        <div className="px-2 pb-2 flex flex-col gap-2 border-t border-current/20 pt-2">
+          {status?.kind === 'paid' && (
+            <div className="text-neutral-700">
+              {status.email} · 到期：{new Date(status.expiresAt).toISOString().slice(0, 10)}
+            </div>
+          )}
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="粘贴 license（base64.base64 格式）"
+            className="font-mono text-xs border rounded p-1 bg-white text-neutral-800 resize-y"
+            rows={2}
+          />
+          {err && <div className="text-red-600">{err}</div>}
+          <div className="flex gap-1">
+            <button
+              disabled={!input.trim() || busy}
+              onClick={async () => {
+                setBusy(true);
+                setErr(null);
+                try {
+                  await onApply(input.trim());
+                  setInput('');
+                  setExpanded(false);
+                } catch (e) {
+                  setErr((e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              className="flex-1 px-2 py-1 rounded bg-blue-600 text-white disabled:bg-neutral-300"
+            >
+              {busy ? '校验中…' : '应用 license'}
+            </button>
+            {status?.kind === 'paid' && (
+              <button
+                disabled={busy}
+                onClick={async () => {
+                  await onClear();
+                  setExpanded(false);
+                }}
+                className="px-2 py-1 rounded border border-neutral-300 hover:bg-neutral-50"
+              >
+                清除
+              </button>
+            )}
+          </div>
+          {status && (status.kind === 'trial' || status.kind === 'trial-expired' || status.kind === 'paid-expired') && (
+            <div className="text-neutral-500">
+              试用结束 / 过期后 MCP 接入会停用（录制 / 重放 / 定时不受影响）。¥30 / 月、¥288 / 年。
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function licenseSummary(status: LicenseStatusWire | null): string {
+  if (!status) return '加载中…';
+  switch (status.kind) {
+    case 'trial': return `试用中 · 还有 ${status.daysLeft} 天`;
+    case 'trial-expired': return '试用已结束 — 点开激活付费';
+    case 'paid': return `已激活 · 还有 ${status.daysLeft} 天`;
+    case 'paid-expired': return 'license 已过期 — 点开续费';
+  }
 }
 
 function ErrorBar({ message, onClose }: { message: string; onClose: () => void }) {

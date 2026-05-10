@@ -24,7 +24,10 @@ export type PopupToBackground =
   | { type: 'script/delete'; id: string }
   | { type: 'script/run'; id: string }
   | { type: 'script/abort' }
-  | { type: 'script/run-state' };
+  | { type: 'script/run-state' }
+  | { type: 'license/get' }
+  | { type: 'license/apply'; license: string }
+  | { type: 'license/clear' };
 
 export type RunPhase = 'replay' | 'draining';
 
@@ -47,7 +50,15 @@ export type BackgroundToPopup =
   | { type: 'rec/state-result'; recording: boolean; tabId?: number; stepCount?: number; name?: string }
   | { type: 'script/list-result'; scripts: Script[] }
   | { type: 'script/get-result'; script: Script | null }
-  | { type: 'script/run-state-result'; state: RunState };
+  | { type: 'script/run-state-result'; state: RunState }
+  | { type: 'license/result'; status: LicenseStatusWire };
+
+/** Wire format of LicenseStatus (background/license.ts owns the impl). */
+export type LicenseStatusWire =
+  | { kind: 'trial'; daysLeft: number; expiresAt: number }
+  | { kind: 'trial-expired'; trialEndedAt: number }
+  | { kind: 'paid'; email: string; daysLeft: number; expiresAt: number }
+  | { kind: 'paid-expired'; email: string; expiredAt: number };
 
 export interface StateQueryReply {
   recording: false | { name: string; stepCount: number };

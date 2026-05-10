@@ -1,5 +1,6 @@
 import { listScripts } from './storage';
 import { runScript, getRunState } from './runner';
+import { isMcpAllowed } from './license';
 import type { Script, RunResult } from '../shared/types';
 
 const HOST = '127.0.0.1';
@@ -142,6 +143,9 @@ async function onRpcMessage(ws: WebSocket, data: string): Promise<void> {
 }
 
 async function dispatch(method: string, params: Record<string, unknown>): Promise<unknown> {
+  if (!(await isMcpAllowed())) {
+    throw new Error('webXport MCP 接入需要付费 license（或在试用期内）。打开 popup 粘贴 license 续费，或访问 ¥30/月 套餐升级');
+  }
   switch (method) {
     case 'list_scripts':
       return await rpcListScripts();

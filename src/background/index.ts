@@ -17,6 +17,7 @@ import { initScheduler, syncAllAlarms, scheduleScript, unscheduleScript } from '
 import { initDownloads } from './downloads';
 import { deliverToTab } from './inject';
 import { ensureMcpConnected } from './mcp-bridge';
+import { getLicenseStatus, applyLicense, clearPaidLicense } from './license';
 
 const DRAFT_KEY = 'webxport.draft';
 
@@ -118,6 +119,16 @@ async function handlePopupMessage(msg: PopupToBackground, _sender: chrome.runtim
       return { type: 'ok' };
     case 'script/run-state':
       return { type: 'script/run-state-result', state: getRunState() };
+    case 'license/get':
+      return { type: 'license/result', status: await getLicenseStatus() };
+    case 'license/apply': {
+      const result = await applyLicense(msg.license);
+      if (!result.ok) return { type: 'error', error: result.reason };
+      return { type: 'license/result', status: await getLicenseStatus() };
+    }
+    case 'license/clear':
+      await clearPaidLicense();
+      return { type: 'license/result', status: await getLicenseStatus() };
   }
 }
 

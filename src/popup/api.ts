@@ -2,6 +2,7 @@ import type {
   PopupToBackground,
   BackgroundToPopup,
   RunState,
+  LicenseStatusWire,
 } from '../shared/messages';
 import type { Script } from '../shared/types';
 
@@ -64,4 +65,19 @@ export async function cancelRecording(): Promise<void> {
 export async function getActiveTabId(): Promise<number | null> {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs[0]?.id ?? null;
+}
+
+export async function getLicense(): Promise<LicenseStatusWire> {
+  const r = await send<Extract<BackgroundToPopup, { type: 'license/result' }>>({ type: 'license/get' });
+  return r.status;
+}
+
+export async function applyLicense(license: string): Promise<LicenseStatusWire> {
+  const r = await send<Extract<BackgroundToPopup, { type: 'license/result' }>>({ type: 'license/apply', license });
+  return r.status;
+}
+
+export async function clearLicense(): Promise<LicenseStatusWire> {
+  const r = await send<Extract<BackgroundToPopup, { type: 'license/result' }>>({ type: 'license/clear' });
+  return r.status;
 }
