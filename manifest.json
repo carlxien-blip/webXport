@@ -3,6 +3,11 @@
   "name": "webXport",
   "version": "0.1.0",
   "description": "录制 + 定时下载登录态后台数据报表；通过 MCP 协议暴露给 Claude Code / Cursor 等 AI agent",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "permissions": [
     "storage",
     "alarms",
@@ -25,6 +30,11 @@
   ],
   "action": {
     "default_popup": "src/popup/index.html",
-    "default_title": "webXport"
+    "default_title": "webXport",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
   }
 }
