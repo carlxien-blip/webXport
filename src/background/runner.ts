@@ -273,8 +273,10 @@ function finish(result: RunResult): void {
 
 async function openOrFocusTab(url: string): Promise<chrome.tabs.Tab> {
   const tabs = await chrome.tabs.query({ url: matchPattern(url) });
-  if (tabs[0]) {
-    if (tabs[0].url !== url && tabs[0].id !== undefined) {
+  if (tabs[0] && tabs[0].id !== undefined) {
+    if (tabs[0].url === url) {
+      await chrome.tabs.reload(tabs[0].id);
+    } else {
       await chrome.tabs.update(tabs[0].id, { url });
     }
     return tabs[0];

@@ -36,7 +36,20 @@ async function injectContentScript(tabId: number): Promise<void> {
 }
 
 export async function deliverToFrame(tabId: number, frameId: number, msg: BackgroundToContent): Promise<void> {
-  await chrome.tabs.sendMessage(tabId, msg, { frameId });
+  const delays = [0, 200, 400, 600, 800, 1000];
+  let lastErr: unknown;
+  for (const delay of delays) {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    try {
+      await chrome.tabs.sendMessage(tabId, msg, { frameId });
+      return;
+    } catch (e) {
+      lastErr = e;
+      const text = (e as Error).message ?? '';
+      if (!MISSING_RECEIVER_MARKERS.some((m) => text.includes(m))) throw e;
+    }
+  }
+  throw lastErr;
 }
 
 const FRAME_RESOLVE_TIMEOUT_MS = 10_000;
