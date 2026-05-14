@@ -4,6 +4,7 @@ import type { Step } from '../shared/types';
 
 type State = 'unknown' | 'active' | 'inactive';
 const BAR_HOST_ID = '__webxport_recording_bar';
+const isTopFrame = window.top === window;
 
 let state: State = 'unknown';
 let buffer: Step[] = [];
@@ -19,6 +20,7 @@ const onClick = (e: MouseEvent) => {
     kind: 'click',
     selector: buildSelectorBundle(target),
     recordedAt: Date.now(),
+    frameUrl: location.href,
   });
 };
 
@@ -37,6 +39,7 @@ const onChange = (e: Event) => {
     selector: buildSelectorBundle(target),
     value: target.value,
     recordedAt: Date.now(),
+    frameUrl: location.href,
   });
 };
 
@@ -66,8 +69,16 @@ export function startRecording(name: string, initialStepCount: number): void {
     stepCount++;
   }
   buffer = [];
-  if (!bar) bar = createRecordingBar(name, stepCount);
-  else bar.setStepCount(stepCount);
+  if (isTopFrame) {
+    if (!bar) bar = createRecordingBar(name, stepCount);
+    else bar.setStepCount(stepCount);
+  }
+}
+
+export function setBarStepCount(count: number): void {
+  if (!isTopFrame || !bar) return;
+  stepCount = count;
+  bar.setStepCount(count);
 }
 
 export function stopRecording(): void {

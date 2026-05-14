@@ -1,7 +1,7 @@
 import type { Script, RunResult } from '../shared/types';
-import type { BackgroundToContent, ContentToBackground, RunState } from '../shared/messages';
+import type { ContentToBackground, RunState } from '../shared/messages';
 import { recordRunResult } from './storage';
-import { deliverToTab } from './inject';
+import { deliverToFrame, resolveFrameId } from './inject';
 
 interface ActiveSession {
   scriptId: string;
@@ -50,7 +50,10 @@ export async function abortRun(): Promise<void> {
   console.log('[webxport] abort requested for run on tab', tabId);
   cancelDrain();
   try {
-    await deliverToTab(tabId, { type: 'replay/abort' });
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => document.dispatchEvent(new CustomEvent('__webxport_abort_replay__')),
+    });
   } catch (e) {
     console.log('[webxport] could not notify content of abort:', (e as Error).message);
   }
@@ -145,8 +148,7 @@ async function doRun(script: Script, startedAt: number): Promise<RunResult> {
       },
     };
 
-    const startMsg: BackgroundToContent = { type: 'replay/start', script, fromIndex: 0 };
-    deliverToTab(tabId, startMsg).then(
+    dispatchReplay(tabId, script, 0).then(
       () => console.log('[webxport] doRun: replay/start delivered'),
       (e) => {
         console.log('[webxport] doRun: replay/start delivery failed:', (e as Error).message);
@@ -161,6 +163,16 @@ async function doRun(script: Script, startedAt: number): Promise<RunResult> {
       }
     );
   });
+}
+
+/** Dispatch replay/start to the frame whose URL matches the step's recorded frameUrl.
+ *  Old steps without frameUrl run in the top frame. */
+async function dispatchReplay(tabId: number, script: Script, fromIndex: number): Promise<void> {
+  const step = script.steps[fromIndex];
+  const frameUrl = step && 'frameUrl' in step ? step.frameUrl : undefined;
+  const frameId = await resolveFrameId(tabId, frameUrl);
+  if (!active || active.tabId !== tabId) return;
+  await deliverToFrame(tabId, frameId, { type: 'replay/start', script, fromIndex });
 }
 
 export function handleContentMessage(msg: ContentToBackground): void {
@@ -192,6 +204,24 @@ export function handleContentMessage(msg: ContentToBackground): void {
       error: msg.error,
       failedAtStep: msg.index,
       downloadedFiles: [...active.downloadedFiles],
+    });
+    return;
+  }
+
+  if (msg.type === 'replay/frame-switch') {
+    const fromIndex = msg.index;
+    const session = active;
+    dispatchReplay(session.tabId, session.script, fromIndex).catch((e) => {
+      if (!active) return;
+      cancelDrain();
+      finish({
+        startedAt: active.startedAt,
+        endedAt: Date.now(),
+        status: 'failed',
+        error: `frame 切换失败：${(e as Error).message}`,
+        failedAtStep: fromIndex,
+        downloadedFiles: [...active.downloadedFiles],
+      });
     });
     return;
   }

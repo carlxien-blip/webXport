@@ -15,7 +15,7 @@ import {
 import { runScript, handleContentMessage, getActiveReplayForTab, getRunState, abortRun } from './runner';
 import { initScheduler, syncAllAlarms, scheduleScript, unscheduleScript } from './scheduler';
 import { initDownloads } from './downloads';
-import { deliverToTab } from './inject';
+import { deliverToTab, broadcastStateRefresh } from './inject';
 import { ensureMcpConnected } from './mcp-bridge';
 import { getLicenseStatus, applyLicense, clearPaidLicense } from './license';
 
@@ -158,6 +158,7 @@ async function beginRecording(tabId: number, name: string): Promise<BackgroundTo
     await clearDraft();
     return { type: 'error', error: `无法连接到目标 tab：${(e as Error).message}` };
   }
+  void broadcastStateRefresh(tabId);
   return { type: 'ok' };
 }
 
@@ -170,6 +171,7 @@ async function endRecording(): Promise<BackgroundToPopup> {
   } catch {
     // tab may have been closed; that's fine, we still save what we have
   }
+  void broadcastStateRefresh(session.tabId);
 
   if (session.draft.steps.length === 0) {
     await clearDraft();
@@ -198,6 +200,7 @@ async function cancelRecording(): Promise<BackgroundToPopup> {
   try {
     await chrome.tabs.sendMessage(session.tabId, { type: 'rec/stop' } satisfies BackgroundToContent);
   } catch {}
+  void broadcastStateRefresh(session.tabId);
   await clearDraft();
   return { type: 'ok' };
 }
@@ -219,6 +222,9 @@ async function appendStepToDraft(step: import('../shared/types').Step): Promise<
   if (!session) return;
   session.draft.steps.push(step);
   await writeDraft(session.draft, session.tabId);
+  chrome.tabs
+    .sendMessage(session.tabId, { type: 'rec/step-count', count: session.draft.steps.length } satisfies BackgroundToContent)
+    .catch(() => {});
 }
 
 interface DraftSession {

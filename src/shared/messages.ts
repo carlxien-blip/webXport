@@ -5,11 +5,13 @@ export type ContentToBackground =
   | { type: 'state/query' }
   | { type: 'replay/step-done'; index: number }
   | { type: 'replay/step-failed'; index: number; error: string }
+  | { type: 'replay/frame-switch'; index: number }
   | { type: 'replay/complete' };
 
 export type BackgroundToContent =
   | { type: 'rec/start'; name: string; stepCount: number }
   | { type: 'rec/stop' }
+  | { type: 'rec/step-count'; count: number }
   | { type: 'replay/start'; script: Script; fromIndex: number }
   | { type: 'replay/abort' };
 

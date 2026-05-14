@@ -15,6 +15,8 @@ export interface ClickStep {
   kind: 'click';
   selector: SelectorBundle;
   recordedAt: number;
+  /** URL of the frame where this step was recorded. Absent on pre-frame-aware scripts. */
+  frameUrl?: string;
 }
 
 export interface InputStep {
@@ -22,6 +24,7 @@ export interface InputStep {
   selector: SelectorBundle;
   value: string;
   recordedAt: number;
+  frameUrl?: string;
 }
 
 export interface WaitStep {

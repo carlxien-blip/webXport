@@ -1,5 +1,6 @@
 import { findElement, extractText } from '../shared/selector';
 import { checkSafety } from '../shared/safety';
+import { frameMatches } from '../shared/frame';
 import type { ContentToBackground } from '../shared/messages';
 import type { Script, Step, ClickStep, InputStep, WaitStep } from '../shared/types';
 
@@ -31,10 +32,14 @@ export async function replay(script: Script, fromIndex: number): Promise<void> {
         return;
       }
       const step = script.steps[i];
-      console.log('[webxport] step', i, step.kind, 'css:', 'selector' in step ? step.selector.css.slice(0, 60) : '-');
+      const stepFrameUrl = 'frameUrl' in step ? step.frameUrl : undefined;
+      if (!frameMatches(stepFrameUrl, location.href)) {
+        console.log('[webxport] step', i, 'frame mismatch, requesting switch to', stepFrameUrl);
+        reportFrameSwitch(i);
+        return;
+      }
       try {
         await runStep(step);
-        console.log('[webxport] step', i, 'done');
         reportDone(i);
       } catch (e) {
         console.log('[webxport] step', i, 'failed:', (e as Error).message);
@@ -175,6 +180,10 @@ function reportFailed(index: number, error: string) {
 
 function reportComplete() {
   send({ type: 'replay/complete' });
+}
+
+function reportFrameSwitch(index: number) {
+  send({ type: 'replay/frame-switch', index });
 }
 
 function send(msg: ContentToBackground) {
