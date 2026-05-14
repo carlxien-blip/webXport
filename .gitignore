@@ -6,3 +6,6 @@ dist/
 .env
 .env.local
 tsconfig.tsbuildinfo
+
+# 上架打包产物（package-extension.sh 生成）
+webxport-extension-v*.zip
