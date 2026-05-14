@@ -4,7 +4,7 @@ import { frameMatches } from '../shared/frame';
 import type { ContentToBackground } from '../shared/messages';
 import type { Script, Step, ClickStep, InputStep, WaitStep } from '../shared/types';
 
-const STEP_TIMEOUT_MS = 15_000;
+const STEP_TIMEOUT_MS = 30_000;
 const ACTION_GAP_MS = 400;
 
 let isActive = false;
