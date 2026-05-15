@@ -7,32 +7,20 @@ const MISSING_RECEIVER_MARKERS = [
 ];
 
 export async function deliverToTab(tabId: number, msg: BackgroundToContent): Promise<void> {
-  try {
-    await chrome.tabs.sendMessage(tabId, msg);
-    return;
-  } catch (e) {
-    const text = (e as Error).message ?? '';
-    const isMissingReceiver = MISSING_RECEIVER_MARKERS.some((m) => text.includes(m));
-    if (!isMissingReceiver) throw e;
-    console.log('[webxport] content script not present in tab, injecting');
-    await injectContentScript(tabId);
-    await new Promise<void>((r) => setTimeout(r, 200));
-    await chrome.tabs.sendMessage(tabId, msg);
-    console.log('[webxport] inject + retry succeeded');
+  const delays = [0, 200, 400, 600, 800, 1000];
+  let lastErr: unknown;
+  for (const delay of delays) {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    try {
+      await chrome.tabs.sendMessage(tabId, msg);
+      return;
+    } catch (e) {
+      lastErr = e;
+      const text = (e as Error).message ?? '';
+      if (!MISSING_RECEIVER_MARKERS.some((m) => text.includes(m))) throw e;
+    }
   }
-}
-
-async function injectContentScript(tabId: number): Promise<void> {
-  const manifest = chrome.runtime.getManifest();
-  const entry = manifest.content_scripts?.[0];
-  const files = entry?.js;
-  if (!files || files.length === 0) {
-    throw new Error('content_scripts manifest entry has no js files');
-  }
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files,
-  });
+  throw lastErr;
 }
 
 export async function deliverToFrame(tabId: number, frameId: number, msg: BackgroundToContent): Promise<void> {

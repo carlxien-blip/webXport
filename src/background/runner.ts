@@ -274,14 +274,44 @@ function finish(result: RunResult): void {
 async function openOrFocusTab(url: string): Promise<chrome.tabs.Tab> {
   const tabs = await chrome.tabs.query({ url: matchPattern(url) });
   if (tabs[0] && tabs[0].id !== undefined) {
+    const tabId = tabs[0].id;
     if (tabs[0].url === url) {
-      await chrome.tabs.reload(tabs[0].id);
+      await reloadAndWait(tabId);
     } else {
-      await chrome.tabs.update(tabs[0].id, { url });
+      await chrome.tabs.update(tabId, { url });
     }
     return tabs[0];
   }
   return chrome.tabs.create({ url, active: false });
+}
+
+/** chrome.tabs.reload() resolves immediately, before the tab actually navigates.
+ *  Listen for a full loading→complete cycle so callers know the page is fresh. */
+async function reloadAndWait(tabId: number, timeoutMs = TAB_LOAD_TIMEOUT_MS): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let sawLoading = false;
+    const onUpdated = (id: number, info: chrome.tabs.TabChangeInfo) => {
+      if (id !== tabId) return;
+      if (info.status === 'loading') sawLoading = true;
+      if (info.status === 'complete' && sawLoading) {
+        cleanup();
+        resolve();
+      }
+    };
+    const cleanup = () => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      clearTimeout(timer);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`reload 等待超时（${timeoutMs}ms）`));
+    }, timeoutMs);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.reload(tabId).catch((e) => {
+      cleanup();
+      reject(e);
+    });
+  });
 }
 
 function matchPattern(url: string): string {
