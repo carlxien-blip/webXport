@@ -17,12 +17,21 @@ export function initDownloads(): void {
     }
     const sub = sanitize(session.script.archive.folderName || session.script.name || 'unnamed');
     const date = todayLocal();
-    const base = item.filename.split(/[/\\]/).pop() ?? item.filename;
-    const filename = `${ROOT_FOLDER}/${sub}/${date}/${base}`;
+    const origBase = item.filename.split(/[/\\]/).pop() ?? item.filename;
+    const ext = extractExt(origBase);
+    const seq = session.downloadedFiles.length;
+    const suffix = seq > 0 ? `_${seq + 1}` : '';
+    const newBase = `${sub}_${date}${suffix}${ext}`;
+    const filename = `${ROOT_FOLDER}/${sub}/${date}/${newBase}`;
     console.log('[webxport] redirecting download to:', filename);
     suggest({ filename, conflictAction: 'uniquify' });
     noteDownload(filename);
   });
+}
+
+function extractExt(name: string): string {
+  const i = name.lastIndexOf('.');
+  return i > 0 ? name.slice(i).toLowerCase() : '';
 }
 
 function sanitize(name: string): string {
