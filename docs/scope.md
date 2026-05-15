@@ -1,8 +1,31 @@
 # 当前范围（V1）
 
-webXport V1 = **Chrome 扩展 + MCP server + 后端**，三件套合起来构成"用户登录态浏览器作为 AI agent 数据抓取工具"的最小闭环。
+webXport V1 = **Chrome 扩展 + MCP server + 后端**，三件套合起来构成「用户登录态浏览器作为 AI agent 数据抓取工具」的最小闭环。
 
-定位：**AI agent（Claude Code / Cursor / Codex 等）通过 MCP 调用本扩展去抓取登录态后台数据**。AI agent 不在产品里，它是产品的消费方。
+## 定位（核心，不要走偏）
+
+webXport 是「**用户定义工具的 MCP server**」——用户在已登录的平台后台录一次操作，webXport 把这次录制变成 AI 能调用的「工具」。AI 通过 MCP 调用工具时可以传任意参数（日期 / 范围）。
+
+**关键 nuance**：AI **不"理解"页面**，AI 用用户给它的工具。
+
+```
+你录一次  →  webxport 给 AI 多加一个工具：
+              tool: 小红书每日数据
+              params: { date: "yesterday" }
+
+之后 AI 调：
+   小红书每日数据(date="2026-05-13")  → 文件下来
+   小红书每日数据(date="2026-05-14")  → 文件下来
+   小红书每日数据(date="2026-05-15")  → 文件下来
+```
+
+AI agent（Claude Code / Cursor / Codex / Cherry Studio）是产品的**消费方**，不在产品本体里。
+
+**这跟通用浏览器 agent（Browser Use / Computer Use / Stagehand）完全不同**：
+- 通用 agent：AI 实时读屏 + 实时决策点哪里 → 慢、贵、不稳、抓不到登录态
+- webxport：**用一次录制换永久免 LLM 推理**，毫秒响应，复用浏览器所有登录态
+
+详细定位决策记录见 [decisions.md](decisions.md)。
 
 V1 分两阶段执行，**先把单用户场景跑稳，再上多租户**：
 

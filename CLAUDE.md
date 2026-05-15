@@ -1,6 +1,32 @@
 # webXport
 
-> Chrome 插件。把用户**已登录**的浏览器通过 MCP 协议暴露给 AI agent（Claude Code / Cursor / Codex 等），构成"AI 数据自动收集 + 分析"工作流的「收集」环。基础能力（录制 / 定时 / 本地下载）永远免费；MCP 接入和跨设备脚本云同步是付费的高阶能力。
+> Chrome 插件。**把用户的 Chrome 变成 AI agent 的「私人工具箱」**——你在已登录的平台后台录一次操作，webXport 就把这次录制变成 AI 能调用的「工具」。AI 通过 MCP 调用工具时可以传任意参数（日期 / 范围 / 过滤条件）。
+>
+> **不是「AI 看页面」，是「AI 用你给它的工具」**——和 Browser Use / Computer Use / Stagehand 等通用浏览器 agent 完全不同：用一次录制换永久免 LLM 推理调用，毫秒级响应，复用你 Chrome 里所有的登录态。
+>
+> 基础能力（录制 / 重放 / 定时 / 本地下载）永远免费；MCP 接入 + 跨设备脚本云同步是付费高阶能力。
+
+## 心智模型（不要再走偏）
+
+webXport 的本质是：「**用户定义工具的 MCP server**」。
+
+类比：
+- Stripe MCP → 让 AI 调用 Stripe 支付接口
+- GitHub MCP → 让 AI 读 issue / 改代码
+- **webXport** → 让 AI 调用「**用户在自己的 Chrome 上预录的所有登录态后台数据导出**」
+
+它**不是**：
+- ❌ 通用浏览器 AI agent（Browser Use / Computer Use / Stagehand / browser-use）
+- ❌ 自动化 RPA 工具（影刀 / 按键精灵 / UiPath）
+- ❌ 爬虫 / Selenium / Playwright
+
+为什么这个定位重要？决定了：
+- **价格能贵**：卖的是「给 AI 加私人数据接入能力」，不是「自动化重复劳动」
+- **用户群广**：任何用 AI agent（Claude Code / Cursor / Codex / ChatGPT desktop / Cherry Studio）的人都是潜在客户。不只电商运营
+- **不被通用 agent 淘汰**：通用 agent 越强，「预录工具 + 参数化 fetch」这条路越值钱（永远 0 LLM 推理成本）
+- **国际化天然**：MCP 是开放协议，海外用户照样需要（他们的平台是 Shopify / Hubspot / Salesforce，接入逻辑一样）
+
+当讨论中冒出「加点 AI 进来读页面吧」「让插件自己识别按钮吧」「集成 GPT 总结数据吧」这类提案——**回这一节**。AI 永远在调用方，不在产品里。
 
 ## 产品红线（不可违反）
 
