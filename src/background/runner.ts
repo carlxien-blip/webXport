@@ -2,6 +2,7 @@ import type { Script, RunResult } from '../shared/types';
 import type { ContentToBackground, RunState } from '../shared/messages';
 import { recordRunResult } from './storage';
 import { deliverToFrame, resolveFrameId } from './inject';
+import { replayApiChain } from './api-replay';
 
 interface ActiveSession {
   scriptId: string;
@@ -86,10 +87,29 @@ export async function runScript(script: Script): Promise<RunResult> {
   if (isRunning) throw new Error('已有任务在运行，等它结束再来');
   isRunning = true;
   const startedAt = Date.now();
-  console.log('[webxport] runScript start:', script.name, 'targetUrl:', script.targetUrl, 'steps:', script.steps.length);
+  console.log('[webxport] runScript start:', script.name, 'targetUrl:', script.targetUrl, 'steps:', script.steps.length, 'apiChains:', script.apiChains?.length ?? 0);
 
   try {
-    const result = await doRun(script, startedAt);
+    let result: RunResult | undefined;
+
+    // v0.2: prefer API replay if the script has captured chains. Fall back to click on any non-success.
+    if (script.apiChains && script.apiChains.length > 0) {
+      try {
+        result = await runApiReplay(script, startedAt);
+        if (result.status === 'success' && result.downloadedFiles.length > 0) {
+          console.log('[webxport] API replay succeeded, files:', result.downloadedFiles.length);
+          await recordRunResult(script.id, result);
+          return result;
+        }
+        console.warn('[webxport] API replay produced no usable result:', result.error ?? '(no error msg)', '— falling back to click');
+      } catch (e) {
+        console.warn('[webxport] API replay threw:', (e as Error).message, '— falling back to click');
+      }
+      // Reset state for click path
+      active = null;
+    }
+
+    result = await doRun(script, startedAt);
     console.log('[webxport] runScript done:', result.status, result.error ?? '', 'files:', result.downloadedFiles.length);
     await recordRunResult(script.id, result);
     return result;
@@ -110,6 +130,72 @@ export async function runScript(script: Script): Promise<RunResult> {
     active = null;
     isRunning = false;
   }
+}
+
+/**
+ * v0.2 API replay path. Skips click simulation entirely:
+ * - open/focus target tab (so cookies are live)
+ * - for each captured ApiChain, run chain in MAIN-world fetch
+ * - save returned blob via chrome.downloads.download (downloads.ts archives it)
+ */
+async function runApiReplay(script: Script, startedAt: number): Promise<RunResult> {
+  if (!script.apiChains?.length) throw new Error('runApiReplay called without apiChains');
+
+  const tab = await openOrFocusTab(script.targetUrl);
+  if (tab.id === undefined) throw new Error('no tab id');
+  const tabId = tab.id;
+  console.log('[api-replay] tab=', tabId, 'chains=', script.apiChains.length);
+  await waitForTabComplete(tabId);
+
+  // Set up active so downloads.ts archives correctly and getRunState reports it.
+  active = {
+    scriptId: script.id,
+    script,
+    tabId,
+    startedAt,
+    downloadedFiles: [],
+    lastDoneStepIndex: -1,
+    drainEndsAt: null,
+    drainTimer: null,
+    resolve: () => {
+      // no-op; API replay doesn't use the click-replay completion machinery
+    },
+  };
+
+  const errors: string[] = [];
+
+  for (let i = 0; i < script.apiChains.length; i++) {
+    const chain = script.apiChains[i];
+    console.log('[api-replay] chain', i + 1, '/', script.apiChains.length, ':', chain.downloadFilename);
+
+    const result = await replayApiChain(tabId, chain);
+    if (!result.ok) {
+      console.warn('[api-replay] chain', i + 1, 'failed:', result.error);
+      errors.push('chain ' + (i + 1) + ': ' + result.error);
+      continue;
+    }
+
+    const filename = result.suggestedFilename ?? 'export-' + Date.now() + '.xlsx';
+    const dataUrl = 'data:application/octet-stream;base64,' + result.base64;
+    try {
+      await chrome.downloads.download({ url: dataUrl, filename, conflictAction: 'uniquify' });
+      console.log('[api-replay] chain', i + 1, 'queued download:', filename);
+    } catch (e) {
+      console.warn('[api-replay] chain', i + 1, 'download failed:', (e as Error).message);
+      errors.push('chain ' + (i + 1) + ' save: ' + (e as Error).message);
+    }
+  }
+
+  // 让 chrome.downloads.onDeterminingFilename → noteDownload 有时间执行
+  await new Promise(r => setTimeout(r, 500));
+
+  return {
+    startedAt,
+    endedAt: Date.now(),
+    status: errors.length === 0 ? 'success' : 'failed',
+    error: errors.length > 0 ? errors.join('; ') : undefined,
+    downloadedFiles: active ? [...active.downloadedFiles] : [],
+  };
 }
 
 async function doRun(script: Script, startedAt: number): Promise<RunResult> {
