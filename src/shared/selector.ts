@@ -100,6 +100,12 @@ function scoreCandidate(el: Element, bundle: SelectorBundle): number {
   return score;
 }
 
+// Require at least this many ancestors in the CSS path before accepting a
+// "uniquely matches one element" early return. Without this, recording on a
+// partially loaded SPA can fix a selector like `a` (the only `<a>` so far),
+// which becomes worthless on replay once the rest of the page has rendered.
+const MIN_CSS_PATH_DEPTH = 3;
+
 function buildCssPath(el: Element): string {
   const parts: string[] = [];
   let curr: Element | null = el;
@@ -107,10 +113,12 @@ function buildCssPath(el: Element): string {
   while (curr && curr !== document.body && curr.nodeType === Node.ELEMENT_NODE) {
     const piece = describeElement(curr);
     parts.unshift(piece);
-    const path = parts.join(' > ');
-    try {
-      if (document.querySelectorAll(path).length === 1) return path;
-    } catch {}
+    if (parts.length >= MIN_CSS_PATH_DEPTH) {
+      const path = parts.join(' > ');
+      try {
+        if (document.querySelectorAll(path).length === 1) return path;
+      } catch {}
+    }
     curr = curr.parentElement;
   }
   return parts.join(' > ');
