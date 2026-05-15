@@ -174,7 +174,7 @@ async function endRecording(): Promise<BackgroundToPopup> {
   } catch {
     // tab may have been closed; that's fine, we still save what we have
   }
-  stopCapture(session.tabId);
+  const captureResult = stopCapture(session.tabId);
   void broadcastStateRefresh(session.tabId);
 
   if (session.draft.steps.length === 0) {
@@ -192,6 +192,7 @@ async function endRecording(): Promise<BackgroundToPopup> {
     createdAt: session.draft.startedAt,
     updatedAt: Date.now(),
     runs: [],
+    apiChains: captureResult.chains.length > 0 ? captureResult.chains : undefined,
   };
   await upsertScript(script);
   await clearDraft();

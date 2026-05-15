@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Script, RunResult } from '../shared/types';
+import type { Script, RunResult, ApiChain, CapturedRequest } from '../shared/types';
 import type { RunState, LicenseStatusWire } from '../shared/messages';
 import {
   listScripts,
@@ -497,6 +497,20 @@ function DetailView({
         </ol>
       </details>
 
+      {script.apiChains && script.apiChains.length > 0 && (
+        <details className="text-xs text-neutral-500">
+          <summary className="cursor-pointer">
+            捕获的 API 链路（{script.apiChains.length}）
+            <span className="ml-2 text-emerald-600">v0.2 API 模式</span>
+          </summary>
+          <div className="mt-2 flex flex-col gap-3">
+            {script.apiChains.map((chain, i) => (
+              <ApiChainCard key={i} chain={chain} />
+            ))}
+          </div>
+        </details>
+      )}
+
       <details className="text-xs text-neutral-500">
         <summary className="cursor-pointer">运行历史（{script.runs.length}）</summary>
         {script.runs.length === 0 && (
@@ -550,4 +564,50 @@ function RunHistoryRow({ run }: { run: RunResult }) {
 
 function pad2(n: number): string {
   return n.toString().padStart(2, '0');
+}
+
+function ApiChainCard({ chain }: { chain: ApiChain }) {
+  const confColors = {
+    high: 'bg-emerald-50 text-emerald-700 border-emerald-300',
+    medium: 'bg-amber-50 text-amber-700 border-amber-300',
+    low: 'bg-neutral-50 text-neutral-600 border-neutral-300',
+  };
+  return (
+    <div className="border rounded p-2 flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-neutral-700 truncate">📦 {chain.downloadFilename}</span>
+        <span className={`px-2 py-0.5 rounded text-xxs border ${confColors[chain.confidence]}`}>{chain.confidence}</span>
+      </div>
+      {chain.submit && (
+        <ApiCallRow label="① submit" req={chain.submit} />
+      )}
+      {chain.polls.length > 0 && (
+        <ApiCallRow label={chain.polls.length > 1 ? `② poll ×${chain.polls.length}` : '② poll'} req={chain.polls[0]} />
+      )}
+      <ApiCallRow label="③ final" req={chain.final} highlight />
+    </div>
+  );
+}
+
+function ApiCallRow({ label, req, highlight }: { label: string; req: CapturedRequest; highlight?: boolean }) {
+  let host = '';
+  let path = '';
+  try {
+    const u = new URL(req.url);
+    host = u.host;
+    path = u.pathname + (u.search.slice(0, 50));
+  } catch {
+    path = req.url.slice(0, 100);
+  }
+  return (
+    <div className={`text-xxs ${highlight ? 'text-neutral-800' : 'text-neutral-600'}`}>
+      <span className="font-mono">{label}</span>{' '}
+      <span className="inline-block px-1 rounded bg-neutral-200 text-neutral-700 font-mono">{req.method}</span>{' '}
+      <span className="text-neutral-500">{host}</span>
+      <span className="font-mono break-all">{path}</span>
+      {req.responseContentType && (
+        <span className="ml-1 text-neutral-400">[{req.responseContentType.split(';')[0]}]</span>
+      )}
+    </div>
+  );
 }

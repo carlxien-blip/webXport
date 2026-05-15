@@ -1,42 +1,13 @@
 // 录制期间挂 chrome.webRequest 监听器，抓当前 tab 的 outgoing 请求 + 响应元数据。
 // 录制停止时按 chrome.downloads.onCreated 事件锚点，回推每个下载的 API 调用链路。
 //
-// Phase 1b：
-//   - 噪音过滤（字节系 / 小红书 telemetry / APM / 通用 tracker）
-//   - 链路推断：识别"提交任务 → 轮询 → 最终下载"三段式 + 单步 GET 直返
-//   - 输出 ApiChain 结构，供 Phase 1c 持久化、Phase 3 重放
+// Phase 1c：持久化前的最后一站。类型已搬到 shared/types.ts 供 popup 使用。
 
-console.log('[api-capture] module loaded — v0.2 phase 1b');
+import type { CapturedRequest, ApiChain } from '../shared/types';
 
-export interface CapturedRequest {
-  requestId: string;
-  url: string;
-  method: string;
-  type: chrome.webRequest.ResourceType;
-  /** Date.now() 时间戳 */
-  startedAt: number;
-  bodyText?: string;
-  bodyFormData?: Record<string, string[]>;
-  requestHeaders?: chrome.webRequest.HttpHeader[];
-  responseStatus?: number;
-  responseContentType?: string;
-  responseContentLength?: number;
-}
+console.log('[api-capture] module loaded — v0.2 phase 1c');
 
-export interface ApiChain {
-  /** 关联的 chrome.downloads.onCreated item.id */
-  downloadId: number;
-  downloadFilename: string;
-  /** 多段链路：提交任务的 POST */
-  submit?: CapturedRequest;
-  /** 多段链路：轮询任务状态的 GET 们 */
-  polls: CapturedRequest[];
-  /** 实际拿到文件的请求 */
-  final: CapturedRequest;
-  confidence: 'high' | 'medium' | 'low';
-  /** 检测推理过程，给用户和 debug 看 */
-  reasons: string[];
-}
+export type { CapturedRequest, ApiChain };
 
 /** key = tabId */
 const capturedByTab = new Map<number, Map<string, CapturedRequest>>();
