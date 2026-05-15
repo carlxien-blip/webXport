@@ -3,6 +3,12 @@ import { replay, isReplayActive, abortReplay } from './replayer';
 import { frameMatches } from '../shared/frame';
 import type { BackgroundToContent, ContentToBackground, StateQueryReply } from '../shared/messages';
 
+declare global {
+  interface Window {
+    __webxport_content_initialized__?: boolean;
+  }
+}
+
 function refreshState(): void {
   const queryMsg: ContentToBackground = { type: 'state/query' };
   chrome.runtime
@@ -29,11 +35,19 @@ function refreshState(): void {
     });
 }
 
-refreshState();
-document.addEventListener('__webxport_refresh_state__', refreshState);
-document.addEventListener('__webxport_abort_replay__', () => abortReplay());
+function kickoffReplay(script: import('../shared/types').Script, fromIndex: number): void {
+  replay(script, fromIndex).catch((e) => {
+    chrome.runtime
+      .sendMessage({ type: 'replay/step-failed', index: fromIndex, error: (e as Error).message })
+      .catch(() => {});
+  });
+}
 
-chrome.runtime.onMessage.addListener((msg: BackgroundToContent, _sender, sendResponse) => {
+function handleBackgroundMessage(
+  msg: BackgroundToContent,
+  _sender: chrome.runtime.MessageSender,
+  sendResponse: (response: { ok: boolean }) => void,
+): boolean {
   switch (msg.type) {
     case 'rec/start':
       startRecording(msg.name, msg.stepCount);
@@ -61,12 +75,16 @@ chrome.runtime.onMessage.addListener((msg: BackgroundToContent, _sender, sendRes
       sendResponse({ ok: true });
       return false;
   }
-});
-
-function kickoffReplay(script: import('../shared/types').Script, fromIndex: number): void {
-  replay(script, fromIndex).catch((e) => {
-    chrome.runtime
-      .sendMessage({ type: 'replay/step-failed', index: fromIndex, error: (e as Error).message })
-      .catch(() => {});
-  });
+  return false;
 }
+
+// Module can re-execute when chrome.scripting.executeScript injects content_scripts
+// as a fallback for unreliable manifest auto-injection (e.g. heavy SPAs). Guard
+// top-level side effects so listeners and onMessage handlers don't accumulate.
+if (!window.__webxport_content_initialized__) {
+  window.__webxport_content_initialized__ = true;
+  document.addEventListener('__webxport_refresh_state__', refreshState);
+  document.addEventListener('__webxport_abort_replay__', () => abortReplay());
+  chrome.runtime.onMessage.addListener(handleBackgroundMessage);
+}
+refreshState();
