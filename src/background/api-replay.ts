@@ -72,7 +72,14 @@ export async function replayApiChain(tabId: number, chain: ApiChain): Promise<Ap
 function inTabReplay(chain: ApiChain): Promise<{ base64?: string; error?: string; debug?: string[] }> {
   return (async () => {
     const debug: string[] = [];
-    debug.push('entered MAIN world, chain has submit=' + !!chain.submit + ', polls=' + chain.polls.length + ', final=' + !!chain.final);
+    debug.push('entered ISOLATED world, chain has submit=' + !!chain.submit + ', polls=' + chain.polls.length + ', final=' + !!chain.final);
+    // 重置 abort 标志（每次 replay 重新开始）
+    (window as unknown as { __webxport_api_abort?: boolean }).__webxport_api_abort = false;
+
+    function isAborted(): boolean {
+      return !!(window as unknown as { __webxport_api_abort?: boolean }).__webxport_api_abort;
+    }
+
     try {
       async function blobToB64(blob: Blob): Promise<string> {
         const buf = await blob.arrayBuffer();
@@ -85,16 +92,24 @@ function inTabReplay(chain: ApiChain): Promise<{ base64?: string; error?: string
         return btoa(binary);
       }
 
+      // 浏览器自管的 header（这些 fetch 会拒绝/覆盖；不要重放）
+      const SKIP_HEADERS = new Set([
+        'cookie', 'user-agent', 'accept-encoding', 'host', 'connection',
+        'content-length', 'origin', 'referer', 'accept-language',
+        'transfer-encoding', 'expect', 'te', 'trailer', 'upgrade',
+      ]);
+
       function buildHeaders(req: { requestHeaders?: Array<{ name: string; value?: string }> }, fallback?: Record<string, string>): Record<string, string> {
-        // 只挑可能影响重放的 header：Content-Type, X-* 自定义头
-        // fetch 会自动处理 Cookie / Origin / Referer / User-Agent
+        // 把录制时捕获的所有 application headers 带过来——除了浏览器管控的
         const out: Record<string, string> = { ...(fallback ?? {}) };
         if (!req.requestHeaders) return out;
         for (const h of req.requestHeaders) {
           const name = h.name.toLowerCase();
-          if (name === 'content-type' || name.startsWith('x-')) {
-            if (h.value) out[h.name] = h.value;
-          }
+          if (SKIP_HEADERS.has(name)) continue;
+          if (name.startsWith('sec-')) continue;   // Sec-Fetch-*, Sec-CH-* by Chrome
+          if (name.startsWith(':')) continue;       // HTTP/2 pseudo-headers
+          if (h.value === undefined) continue;
+          out[h.name] = h.value;
         }
         return out;
       }
@@ -220,20 +235,33 @@ function inTabReplay(chain: ApiChain): Promise<{ base64?: string; error?: string
         return null;
       }
 
-      const maxAttempts = 60;
+      const maxAttempts = 40;
       const pollIntervalMs = 1500;
+      const maxConsecutive4xx = 5; // 连续 5 个 4xx 直接放弃，不傻等
+      const pollHeaders = buildHeaders(chain.polls[0]);
       let finalUrl: string | null = null;
       let lastPollSnippet = '';
+      let consecutive4xx = 0;
       for (let i = 0; i < maxAttempts; i++) {
+        if (isAborted()) return { error: 'aborted by user', debug };
         await new Promise(r => setTimeout(r, pollIntervalMs));
+        if (isAborted()) return { error: 'aborted by user', debug };
         let pollResp: Response;
         try {
-          pollResp = await fetch(pollUrl, { credentials: 'include' });
+          pollResp = await fetch(pollUrl, { credentials: 'include', headers: pollHeaders });
         } catch (e) {
-          // 网络瞬时错误，继续重试
           lastPollSnippet = 'fetch err: ' + (e as Error).message;
           continue;
         }
+        if (pollResp.status >= 400 && pollResp.status < 500) {
+          consecutive4xx++;
+          lastPollSnippet = 'HTTP ' + pollResp.status;
+          if (consecutive4xx >= maxConsecutive4xx) {
+            return { error: 'poll auth failed (' + consecutive4xx + ' consecutive ' + pollResp.status + 's)', debug };
+          }
+          continue;
+        }
+        consecutive4xx = 0;
         if (!pollResp.ok) {
           lastPollSnippet = 'HTTP ' + pollResp.status;
           continue;
@@ -248,19 +276,25 @@ function inTabReplay(chain: ApiChain): Promise<{ base64?: string; error?: string
         const url = findDownloadableUrl(pollData);
         if (url) {
           finalUrl = url;
+          debug.push('poll #' + (i + 1) + ' got url');
           break;
         }
         lastPollSnippet = JSON.stringify(pollData).slice(0, 160);
       }
 
       if (!finalUrl) {
-        return { error: 'poll timed out after ' + maxAttempts + ' attempts (last: ' + lastPollSnippet + ')', debug };
+        return { error: 'poll exhausted (last: ' + lastPollSnippet + ')', debug };
       }
       debug.push('finalUrl: ' + finalUrl.slice(0, 100));
 
       // 5. 拉最终文件。CDN（COS / OSS）签名 URL 不需要 cookie 鉴权，强行带 credentials 可能触发 CORS 阻断
+      if (isAborted()) return { error: 'aborted by user', debug };
       const isCdn = /\.(cos|oss|s3|cloudfront|qcloud|amazonaws|cdn)\./i.test(new URL(finalUrl).host);
-      const fileResp = await fetch(finalUrl, { credentials: isCdn ? 'omit' : 'include' });
+      const finalHeaders = isCdn ? {} : buildHeaders(chain.final);
+      const fileResp = await fetch(finalUrl, {
+        credentials: isCdn ? 'omit' : 'include',
+        headers: finalHeaders,
+      });
       debug.push('final HTTP ' + fileResp.status + ' (cred=' + (isCdn ? 'omit' : 'include') + ')');
       if (!fileResp.ok) return { error: 'final fetch HTTP ' + fileResp.status, debug };
       const blob = await fileResp.blob();

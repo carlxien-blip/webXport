@@ -50,13 +50,25 @@ export function getRunState(): RunState {
 export async function abortRun(): Promise<void> {
   if (!active) return;
   const tabId = active.tabId;
-  console.log('[webxport] abort requested for run on tab', tabId);
+  const mode = active.mode;
+  console.log('[webxport] abort requested for run on tab', tabId, 'mode=', mode);
   cancelDrain();
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      func: () => document.dispatchEvent(new CustomEvent('__webxport_abort_replay__')),
-    });
+    if (mode === 'api') {
+      // API 模式：在 isolated world 设置 abort 标志，inTabReplay 的 poll loop 会检测到
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          (window as unknown as { __webxport_api_abort?: boolean }).__webxport_api_abort = true;
+        },
+      });
+    } else {
+      // Click 模式：派事件给页面，replayer 监听 __webxport_abort_replay__
+      await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: () => document.dispatchEvent(new CustomEvent('__webxport_abort_replay__')),
+      });
+    }
   } catch (e) {
     console.log('[webxport] could not notify content of abort:', (e as Error).message);
   }
