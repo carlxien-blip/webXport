@@ -14,6 +14,8 @@ interface ActiveSession {
   drainEndsAt: number | null;
   drainTimer: ReturnType<typeof setTimeout> | null;
   resolve: (r: RunResult) => void;
+  /** 'click' = 传统 content-script 重放; 'api' = chrome.scripting fetch 重放 */
+  mode: 'click' | 'api';
 }
 
 const RUN_TIMEOUT_MS = 5 * 60_000;
@@ -69,6 +71,8 @@ export async function abortRun(): Promise<void> {
 
 export function getActiveReplayForTab(tabId: number): { script: Script; fromIndex: number } | null {
   if (!active || active.tabId !== tabId) return null;
+  // API 模式不要让 content script 自动接管——它会在跨导航 resume 时点起 click replay
+  if (active.mode === 'api') return null;
   return {
     script: active.script,
     fromIndex: active.lastDoneStepIndex + 1,
@@ -160,6 +164,7 @@ async function runApiReplay(script: Script, startedAt: number): Promise<RunResul
     resolve: () => {
       // no-op; API replay doesn't use the click-replay completion machinery
     },
+    mode: 'api',
   };
 
   const errors: string[] = [];
@@ -232,6 +237,7 @@ async function doRun(script: Script, startedAt: number): Promise<RunResult> {
         clearTimeout(timeout);
         resolve(r);
       },
+      mode: 'click',
     };
 
     dispatchReplay(tabId, script, 0).then(
@@ -262,8 +268,10 @@ async function dispatchReplay(tabId: number, script: Script, fromIndex: number):
 }
 
 export function handleContentMessage(msg: ContentToBackground): void {
-  console.log('[webxport] handleContentMessage:', msg.type, 'active?', !!active);
+  console.log('[webxport] handleContentMessage:', msg.type, 'active?', !!active, 'mode=', active?.mode);
   if (!active) return;
+  // API 模式直接忽略 content script 的事件——免得 click replay 被旁路触发
+  if (active.mode === 'api') return;
 
   if (msg.type === 'replay/step-done') {
     if (msg.index > active.lastDoneStepIndex) {

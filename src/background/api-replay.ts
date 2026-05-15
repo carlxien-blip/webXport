@@ -27,10 +27,11 @@ export interface ApiReplayResult {
 export async function replayApiChain(tabId: number, chain: ApiChain): Promise<ApiReplayResult> {
   console.log('[api-replay] replayApiChain enter tab=', tabId, 'chain has submit/polls/final:', !!chain.submit, chain.polls.length, !!chain.final);
   try {
-    console.log('[api-replay] calling chrome.scripting.executeScript (MAIN world)...');
+    console.log('[api-replay] calling chrome.scripting.executeScript (ISOLATED world)...');
+    // ISOLATED：默认世界，有 chrome.* API，对 fetch+credentials 足够。
+    // MAIN 留给后续需要调用页面 sign 函数（抖店 a_bogus）时再切。
     const injection = await chrome.scripting.executeScript({
       target: { tabId },
-      world: 'MAIN',
       func: inTabReplay,
       args: [chain],
     });
