@@ -25,18 +25,31 @@ export interface ApiReplayResult {
  * tab 必须已经 navigate 到目标平台并加载完成。
  */
 export async function replayApiChain(tabId: number, chain: ApiChain): Promise<ApiReplayResult> {
+  console.log('[api-replay] replayApiChain enter tab=', tabId, 'chain has submit/polls/final:', !!chain.submit, chain.polls.length, !!chain.final);
   try {
-    const [{ result }] = await chrome.scripting.executeScript({
+    console.log('[api-replay] calling chrome.scripting.executeScript (MAIN world)...');
+    const injection = await chrome.scripting.executeScript({
       target: { tabId },
       world: 'MAIN',
       func: inTabReplay,
       args: [chain],
     });
+    console.log('[api-replay] executeScript returned, frames:', injection.length);
 
+    if (injection.length === 0) {
+      return { ok: false, error: 'executeScript returned 0 frames' };
+    }
+    const first = injection[0];
+    const result = first.result as { base64?: string; error?: string; debug?: string[] } | undefined;
+    if (result?.debug?.length) {
+      console.log('[api-replay] in-tab debug breadcrumbs:');
+      for (const line of result.debug) console.log('   →', line);
+    }
     if (!result) return { ok: false, error: 'executeScript returned no result' };
-    if ('error' in result && result.error) return { ok: false, error: result.error };
-    if (!('base64' in result) || !result.base64) return { ok: false, error: 'no base64 in result' };
+    if (result.error) return { ok: false, error: result.error };
+    if (!result.base64) return { ok: false, error: 'no base64 in result' };
 
+    console.log('[api-replay] got base64 length=', result.base64.length);
     return {
       ok: true,
       base64: result.base64,
@@ -55,8 +68,10 @@ export async function replayApiChain(tabId: number, chain: ApiChain): Promise<Ap
 //  - 返回值结构必须是 plain object（被 JSON 序列化回来）
 // ─────────────────────────────────────────────────────────────────────
 
-function inTabReplay(chain: ApiChain): Promise<{ base64?: string; error?: string }> {
+function inTabReplay(chain: ApiChain): Promise<{ base64?: string; error?: string; debug?: string[] }> {
   return (async () => {
+    const debug: string[] = [];
+    debug.push('entered MAIN world, chain has submit=' + !!chain.submit + ', polls=' + chain.polls.length + ', final=' + !!chain.final);
     try {
       async function blobToB64(blob: Blob): Promise<string> {
         const buf = await blob.arrayBuffer();
@@ -85,21 +100,28 @@ function inTabReplay(chain: ApiChain): Promise<{ base64?: string; error?: string
 
       // ── 单步：直接 fetch final ──
       if (!chain.submit && chain.polls.length === 0) {
+        debug.push('single-step branch');
         const final = chain.final;
+        debug.push('fetching final: ' + final.method + ' ' + final.url.slice(0, 100));
         const resp = await fetch(final.url, {
           method: final.method,
           credentials: 'include',
           headers: buildHeaders(final),
         });
-        if (!resp.ok) return { error: 'final ' + final.method + ' HTTP ' + resp.status };
+        debug.push('final HTTP ' + resp.status);
+        if (!resp.ok) return { error: 'final ' + final.method + ' HTTP ' + resp.status, debug };
         const blob = await resp.blob();
-        if (blob.size === 0) return { error: 'final returned empty blob' };
-        return { base64: await blobToB64(blob) };
+        debug.push('blob size=' + blob.size);
+        if (blob.size === 0) return { error: 'final returned empty blob', debug };
+        const b64 = await blobToB64(blob);
+        debug.push('base64 length=' + b64.length);
+        return { base64: b64, debug };
       }
 
       // ── 多步：submit → poll → final ──
-      if (!chain.submit) return { error: 'multi-step chain missing submit' };
-      if (chain.polls.length === 0) return { error: 'multi-step chain missing poll URL template' };
+      debug.push('multi-step branch');
+      if (!chain.submit) return { error: 'multi-step chain missing submit', debug };
+      if (chain.polls.length === 0) return { error: 'multi-step chain missing poll URL template', debug };
 
       // 1. submit
       const submitInit: RequestInit = {
@@ -126,9 +148,12 @@ function inTabReplay(chain: ApiChain): Promise<{ base64?: string; error?: string
       }
       submitInit.headers = headers;
 
+      debug.push('submit: ' + chain.submit.method + ' ' + chain.submit.url.slice(0, 80));
       const submitResp = await fetch(chain.submit.url, submitInit);
-      if (!submitResp.ok) return { error: 'submit HTTP ' + submitResp.status };
+      debug.push('submit HTTP ' + submitResp.status);
+      if (!submitResp.ok) return { error: 'submit HTTP ' + submitResp.status, debug };
       const submitData = await submitResp.json();
+      debug.push('submit body: ' + JSON.stringify(submitData).slice(0, 200));
 
       // 2. 提取 task_id（递归搜常见字段名或形状像 task_id 的字符串）
       function findTaskId(obj: unknown): string | null {
@@ -152,8 +177,9 @@ function inTabReplay(chain: ApiChain): Promise<{ base64?: string; error?: string
 
       const taskId = findTaskId(submitData);
       if (!taskId) {
-        return { error: 'no task_id in submit response: ' + JSON.stringify(submitData).slice(0, 240) };
+        return { error: 'no task_id in submit response: ' + JSON.stringify(submitData).slice(0, 240), debug };
       }
+      debug.push('task_id=' + taskId);
 
       // 3. 构建 poll URL：替换原 task_id 参数的值
       const pollUrlTemplate = chain.polls[0].url;
@@ -227,17 +253,23 @@ function inTabReplay(chain: ApiChain): Promise<{ base64?: string; error?: string
       }
 
       if (!finalUrl) {
-        return { error: 'poll timed out after ' + maxAttempts + ' attempts (last: ' + lastPollSnippet + ')' };
+        return { error: 'poll timed out after ' + maxAttempts + ' attempts (last: ' + lastPollSnippet + ')', debug };
       }
+      debug.push('finalUrl: ' + finalUrl.slice(0, 100));
 
-      // 5. 拉最终文件
-      const fileResp = await fetch(finalUrl, { credentials: 'include' });
-      if (!fileResp.ok) return { error: 'final fetch HTTP ' + fileResp.status };
+      // 5. 拉最终文件。CDN（COS / OSS）签名 URL 不需要 cookie 鉴权，强行带 credentials 可能触发 CORS 阻断
+      const isCdn = /\.(cos|oss|s3|cloudfront|qcloud|amazonaws|cdn)\./i.test(new URL(finalUrl).host);
+      const fileResp = await fetch(finalUrl, { credentials: isCdn ? 'omit' : 'include' });
+      debug.push('final HTTP ' + fileResp.status + ' (cred=' + (isCdn ? 'omit' : 'include') + ')');
+      if (!fileResp.ok) return { error: 'final fetch HTTP ' + fileResp.status, debug };
       const blob = await fileResp.blob();
-      if (blob.size === 0) return { error: 'final blob empty' };
-      return { base64: await blobToB64(blob) };
+      debug.push('blob size=' + blob.size);
+      if (blob.size === 0) return { error: 'final blob empty', debug };
+      const b64 = await blobToB64(blob);
+      debug.push('base64 length=' + b64.length);
+      return { base64: b64, debug };
     } catch (e) {
-      return { error: 'in-tab replay exception: ' + ((e as Error)?.message || String(e)) };
+      return { error: 'in-tab replay exception: ' + ((e as Error)?.message || String(e)), debug };
     }
   })();
 }
