@@ -70,6 +70,7 @@ function ensureListeners(): void {
   chrome.webRequest.onBeforeSendHeaders.addListener(onBeforeSendHeaders, { urls: ['<all_urls>'] }, ['requestHeaders']);
   chrome.webRequest.onResponseStarted.addListener(onResponseStarted, { urls: ['<all_urls>'] }, ['responseHeaders']);
   chrome.downloads.onCreated.addListener(onDownloadCreated);
+  chrome.downloads.onChanged.addListener(onDownloadChanged);
   console.log('[api-capture] listeners installed');
 }
 
@@ -132,8 +133,24 @@ function onResponseStarted(details: chrome.webRequest.WebResponseCacheDetails): 
 
 function onDownloadCreated(item: chrome.downloads.DownloadItem): void {
   for (const [, list] of downloadsByTab) {
-    list.push({ id: item.id, filename: item.filename || '?', at: Date.now() });
+    list.push({ id: item.id, filename: basenameOf(item.filename) || '?', at: Date.now() });
   }
+}
+
+function onDownloadChanged(delta: chrome.downloads.DownloadDelta): void {
+  if (!delta.filename?.current) return;
+  const base = basenameOf(delta.filename.current);
+  if (!base) return;
+  for (const [, list] of downloadsByTab) {
+    const d = list.find(x => x.id === delta.id);
+    if (d) d.filename = base;
+  }
+}
+
+function basenameOf(path: string | undefined): string {
+  if (!path) return '';
+  const last = path.split(/[/\\]/).pop();
+  return last ?? '';
 }
 
 // ─────────────────────────────────────────────────────────────────────
