@@ -97,7 +97,7 @@ export function App() {
               const tabId = await getActiveTabId();
               if (tabId == null) throw new Error('找不到当前 tab');
               await beginRecording(tabId, name);
-              await refresh();
+              window.close();
             } catch (e) {
               setError((e as Error).message);
             }

@@ -10,8 +10,13 @@ let state: State = 'unknown';
 let buffer: Step[] = [];
 let bar: RecordingBar | null = null;
 let stepCount = 0;
+let lastClickAt = 0;
 
 const onClick = (e: MouseEvent) => {
+  if (!e.isTrusted) return;
+  const now = Date.now();
+  if (now - lastClickAt < 100) return;
+  lastClickAt = now;
   if (state === 'inactive') return;
   const target = e.target as Element | null;
   if (!target || target.nodeType !== Node.ELEMENT_NODE) return;
@@ -25,6 +30,7 @@ const onClick = (e: MouseEvent) => {
 };
 
 const onChange = (e: Event) => {
+  if (!e.isTrusted) return;
   if (state === 'inactive') return;
   const target = e.target;
   if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) {
@@ -34,6 +40,9 @@ const onChange = (e: Event) => {
   if (target instanceof HTMLInputElement && (target.type === 'password' || target.type === 'hidden')) {
     return;
   }
+  // Radio/checkbox/select fire `change` as a side effect of the click we already
+  // captured. Replaying the click reproduces the same change, so skip these.
+  if (Date.now() - lastClickAt < 200) return;
   handleStep({
     kind: 'input',
     selector: buildSelectorBundle(target),
@@ -58,8 +67,17 @@ function emit(step: Step) {
   chrome.runtime.sendMessage(msg).catch(() => {});
 }
 
-document.addEventListener('click', onClick, true);
-document.addEventListener('change', onChange, true);
+declare global {
+  interface Window {
+    __webxport_listeners_attached__?: boolean;
+  }
+}
+
+if (!window.__webxport_listeners_attached__) {
+  window.__webxport_listeners_attached__ = true;
+  document.addEventListener('click', onClick, true);
+  document.addEventListener('change', onChange, true);
+}
 
 export function startRecording(name: string, initialStepCount: number): void {
   state = 'active';
@@ -167,9 +185,13 @@ function createRecordingBar(name: string, initialCount: number): RecordingBar {
   countEl.textContent = `${initialCount} 步`;
 
   shadow.querySelector('.finish')!.addEventListener('click', () => {
+    host.remove();
+    bar = null;
     chrome.runtime.sendMessage({ type: 'rec/end' }).catch(() => {});
   });
   shadow.querySelector('.cancel')!.addEventListener('click', () => {
+    host.remove();
+    bar = null;
     chrome.runtime.sendMessage({ type: 'rec/cancel' }).catch(() => {});
   });
 
