@@ -298,8 +298,14 @@ async function reloadAndWait(tabId: number, timeoutMs = TAB_LOAD_TIMEOUT_MS): Pr
         resolve();
       }
     };
+    const onRemoved = (id: number) => {
+      if (id !== tabId) return;
+      cleanup();
+      reject(new Error('目标 tab 在 reload 过程中被关闭'));
+    };
     const cleanup = () => {
       chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.tabs.onRemoved.removeListener(onRemoved);
       clearTimeout(timer);
     };
     const timer = setTimeout(() => {
@@ -307,6 +313,7 @@ async function reloadAndWait(tabId: number, timeoutMs = TAB_LOAD_TIMEOUT_MS): Pr
       reject(new Error(`reload 等待超时（${timeoutMs}ms）`));
     }, timeoutMs);
     chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.onRemoved.addListener(onRemoved);
     chrome.tabs.reload(tabId).catch((e) => {
       cleanup();
       reject(e);

@@ -6,13 +6,15 @@ const MISSING_RECEIVER_MARKERS = [
   'Receiving end does not exist',
 ];
 
-export async function deliverToTab(tabId: number, msg: BackgroundToContent): Promise<void> {
+/** Retry sendMessage on "Receiving end does not exist" — content script may not
+ *  yet be attached at document_idle when caller fires. */
+async function deliverWithRetry(send: () => Promise<unknown>): Promise<void> {
   const delays = [0, 200, 400, 600, 800, 1000];
   let lastErr: unknown;
   for (const delay of delays) {
     if (delay > 0) await new Promise((r) => setTimeout(r, delay));
     try {
-      await chrome.tabs.sendMessage(tabId, msg);
+      await send();
       return;
     } catch (e) {
       lastErr = e;
@@ -23,21 +25,12 @@ export async function deliverToTab(tabId: number, msg: BackgroundToContent): Pro
   throw lastErr;
 }
 
-export async function deliverToFrame(tabId: number, frameId: number, msg: BackgroundToContent): Promise<void> {
-  const delays = [0, 200, 400, 600, 800, 1000];
-  let lastErr: unknown;
-  for (const delay of delays) {
-    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
-    try {
-      await chrome.tabs.sendMessage(tabId, msg, { frameId });
-      return;
-    } catch (e) {
-      lastErr = e;
-      const text = (e as Error).message ?? '';
-      if (!MISSING_RECEIVER_MARKERS.some((m) => text.includes(m))) throw e;
-    }
-  }
-  throw lastErr;
+export function deliverToTab(tabId: number, msg: BackgroundToContent): Promise<void> {
+  return deliverWithRetry(() => chrome.tabs.sendMessage(tabId, msg));
+}
+
+export function deliverToFrame(tabId: number, frameId: number, msg: BackgroundToContent): Promise<void> {
+  return deliverWithRetry(() => chrome.tabs.sendMessage(tabId, msg, { frameId }));
 }
 
 const FRAME_RESOLVE_TIMEOUT_MS = 10_000;
@@ -67,9 +60,9 @@ export async function resolveFrameId(tabId: number, requiredFrameUrl: string | u
     } catch {}
     await new Promise((r) => setTimeout(r, FRAME_RESOLVE_POLL_MS));
   }
-  throw new Error(
-    `找不到 URL 匹配的 frame：${requiredFrameUrl}\n当前 tab 内 frame URL：\n${lastSeenUrls.join('\n')}`,
-  );
+  const summary = `找不到 URL 匹配的 frame：${requiredFrameUrl}`;
+  console.error('[webxport bg]', summary, '— observed frames:', lastSeenUrls);
+  throw new Error(summary);
 }
 
 export async function broadcastStateRefresh(tabId: number): Promise<void> {
