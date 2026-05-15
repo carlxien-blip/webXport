@@ -9,3 +9,6 @@ tsconfig.tsbuildinfo
 
 # 上架打包产物（package-extension.sh 生成）
 webxport-extension-v*.zip
+
+# 发售包（release-bundle.sh 生成）
+webxport-发售包-v*.zip

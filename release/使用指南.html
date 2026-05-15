@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>webXport 使用指南</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 760px; margin: 2em auto; padding: 0 1.4em 4em; line-height: 1.75; color: #1a1a1a; }
+  h1 { color: #d93025; border-bottom: 3px solid #d93025; padding-bottom: 0.4em; font-size: 1.8em; }
+  h2 { color: #1a73e8; margin-top: 2.2em; font-size: 1.35em; border-left: 4px solid #1a73e8; padding-left: 0.5em; }
+  h3 { margin-top: 1.6em; color: #333; }
+  code { background: #f3f4f6; padding: 0.1em 0.4em; border-radius: 3px; font-size: 0.92em; color: #d93025; }
+  pre { background: #f8f9fa; padding: 1em; border-radius: 6px; overflow-x: auto; border: 1px solid #e8eaed; }
+  pre code { background: transparent; color: #1a1a1a; }
+  .step { background: #f0f7ff; border-left: 4px solid #1a73e8; padding: 0.9em 1.2em; margin: 1em 0; border-radius: 4px; }
+  .warn { background: #fef7e0; border-left: 4px solid #f9ab00; padding: 0.9em 1.2em; margin: 1em 0; border-radius: 4px; }
+  .price-table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  .price-table th, .price-table td { border: 1px solid #e0e0e0; padding: 0.7em 1em; text-align: left; }
+  .price-table th { background: #fafafa; font-weight: 600; }
+  .price-table tr:nth-child(even) td { background: #fafafa; }
+  blockquote { border-left: 4px solid #999; padding: 0.4em 1em; margin: 1em 0; color: #555; font-style: italic; background: #fafafa; }
+  .qr-block { text-align: center; margin: 2em 0; padding: 1em; background: #fafafa; border-radius: 8px; }
+  .qr-block img { max-width: 240px; border: 1px solid #e0e0e0; padding: 8px; background: white; border-radius: 4px; }
+  .qr-block p { color: #666; font-size: 0.9em; margin-top: 0.6em; }
+  ol li, ul li { margin: 0.3em 0; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 3em 0 1em; }
+  .footer { text-align: center; color: #999; font-size: 0.85em; }
+  .price-highlight { color: #d93025; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>webXport 使用指南</h1>
+
+<p>Chrome 插件——在你<strong>已登录</strong>的浏览器里录制一次操作，定时重放下载数据报表。也能让 AI agent（Claude Code / Cursor）通过 MCP 直接调用，实现「AI 帮你抓数据 + 分析」闭环。</p>
+
+<h2>🚀 5 分钟跑通</h2>
+
+<h3>第一步：安装扩展</h3>
+
+<div class="step">
+<ol>
+<li>解压旁边的 <code>webxport-extension/</code> 文件夹（如果还没解压）</li>
+<li>打开 Chrome → 地址栏访问 <code>chrome://extensions/</code></li>
+<li>右上角打开「<strong>开发者模式</strong>」开关</li>
+<li>点「<strong>加载已解压的扩展程序</strong>」→ 选 <code>webxport-extension/</code> 文件夹</li>
+<li>Chrome 工具栏右上角出现 <strong>W 图标</strong></li>
+</ol>
+</div>
+
+<div class="warn">
+⚠️ Chrome 顶部会有一条黄色警告"关闭开发者模式"。这是因为目前还在 Chrome Web Store 审核中（预计 1-2 周通过）。通过之后切换成商店版，警告条消失。
+</div>
+
+<h3>第二步：录第一个脚本</h3>
+
+<div class="step">
+<ol>
+<li>在你<strong>已登录</strong>的平台后台打开（小红书千帆 <code>ark.xiaohongshu.com</code>、抖店、千牛、京麦、视频号助手等）</li>
+<li>点工具栏 <strong>W 图标</strong> → popup 弹出 → 输入脚本名（如"小红书每日数据"）→ 点<strong>「开始录制」</strong></li>
+<li>在页面上正常操作：点「数据中心」→ 选时间范围 → 点「导出」→ 等下载弹窗 → 点「下载」</li>
+<li>操作完点<strong>页面右下角浮动条</strong>的「停止录制」</li>
+<li>脚本保存好了 ✓</li>
+</ol>
+</div>
+
+<p><strong>验证</strong>：popup 里点该脚本「立即运行」，Chrome 会自动重复你刚才的操作，几秒后文件落到 <code>~/Downloads/webxport/小红书每日数据/{今天日期}/</code>。</p>
+
+<h3>第三步：设置定时</h3>
+
+<div class="step">
+<p>popup → 选脚本 → <strong>「编辑」</strong> → 设置「时间」（<code>HH:mm</code> 24 小时制）→ 保存。每天到点自动跑。</p>
+</div>
+
+<div class="warn">
+⚠️ Chrome 必须开着才会触发定时。半夜电脑关机就会跳过那次（<strong>不补跑</strong>）。要每天准时跑就别关 Chrome。
+</div>
+
+<h2>📂 下载文件去哪了</h2>
+
+<pre><code>~/Downloads/
+  webxport/
+    小红书每日数据/
+      2026-05-15/
+        note-data.xlsx
+      2026-05-16/
+        note-data.xlsx
+    抖店订单/
+      2026-05-16/
+        orders.csv</code></pre>
+
+<p>按业务日期归档，<strong>跨时区跨日不会错档</strong>。</p>
+
+<h2>🤖 让 AI 调用（高阶 / 付费）</h2>
+
+<p>如果你装了 <strong>Claude Code</strong> 或 <strong>Cursor</strong>，可以让 AI 直接驱动 webXport：</p>
+
+<blockquote>用 webxport 跑一下"小红书每日数据"，跑完帮我看互动率有没有掉</blockquote>
+
+<p>AI 会<strong>自己调用 webXport</strong> → 等数据下载好 → 读 Excel → 给结论。你不用切窗口、不用打开 Excel、不用复制粘贴数据。</p>
+
+<p>详细 MCP 接入参考 GitHub 仓库：<code>github.com/carlxien-blip/webXport</code></p>
+
+<h2>💰 价格</h2>
+
+<table class="price-table">
+<tr><th></th><th>免费版</th><th>付费版</th></tr>
+<tr><td>录制 / 重放 / 定时 / 本地下载</td><td>✅ 无限</td><td>✅ 无限</td></tr>
+<tr><td>脚本数量</td><td>✅ 无限</td><td>✅ 无限</td></tr>
+<tr><td><strong>AI 调用（MCP 接入）</strong></td><td>14 天试用</td><td>✅</td></tr>
+</table>
+
+<p class="price-highlight">月付 ¥30 / 年付 ¥288（年付 ≈ 10 折优惠）</p>
+
+<h2>📱 怎么付款 + 拿激活码</h2>
+
+<div class="step">
+<ol>
+<li>微信扫下面的二维码加我为好友</li>
+<li>备注「webXport 购买」+ 月付 / 年付，转账给我</li>
+<li>收到付款后 <strong>1 小时内</strong>微信发你一段 license 字符串（base64 编码，比较长）</li>
+<li>复制 license → 打开 webXport popup → 顶部「试用中」横条点开 → 粘贴到文本框 → 点<strong>「应用 license」</strong></li>
+<li>横条变绿"已激活"，AI 调用正式启用 ✓</li>
+</ol>
+</div>
+
+<div class="qr-block">
+<img src="作者微信.jpg" alt="作者微信二维码">
+<p>扫码加微信 · 付款 / 咨询 / 反馈</p>
+</div>
+
+<h2>❓ 常见问题</h2>
+
+<h3>脚本跑挂了怎么办？</h3>
+<p>popup 里看「运行历史」，会显示"第 N 步失败：xxx"。常见原因：</p>
+<ul>
+<li><strong>session 过期</strong> → 浏览器里重新登录一次再跑</li>
+<li><strong>平台 UI 改版</strong> → 删掉脚本重录一次（5 分钟的事）</li>
+<li><strong>弹窗 / 验证码挡住了</strong> → 手动处理掉再跑</li>
+</ul>
+
+<h3>我录的时候点错了一步</h3>
+<p>那次录制放弃，重新开始。脚本要"干净"，多余步骤会让重放变脆。</p>
+
+<h3>我半夜电脑没开，定时漏了一天</h3>
+<p>不补跑。早上手动点「立即运行」一次。</p>
+
+<h3>多台电脑能用同一个 license 吗？</h3>
+<p>暂时不限制（自己家 + 公司电脑这种场景 OK）。批量分享发现会上设备绑定。</p>
+
+<h3>退款？</h3>
+<p>14 天试用足够判断了。<strong>付款后不退</strong>（明显的技术故障除外）。</p>
+
+<h3>担心数据安全？</h3>
+<p>所有数据<strong>本地存储</strong>（chrome.storage.local + Downloads/）。不上传任何服务器、不收集邮箱手机号、不读取 cookies。详见 <a href="https://carlxien-blip.github.io/webXport/privacy-policy.html">隐私政策</a>。</p>
+
+<hr>
+<p class="footer">webXport v0.1.0 · 2026</p>
+
+</body>
+</html>
