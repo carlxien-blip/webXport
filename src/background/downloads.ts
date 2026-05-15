@@ -17,7 +17,17 @@ export function initDownloads(): void {
     }
     const sub = sanitize(session.script.archive.folderName || session.script.name || 'unnamed');
     const date = todayLocal();
-    const origBase = item.filename.split(/[/\\]/).pop() ?? item.filename;
+
+    // For API replay (data: URL), Chrome generates a generic name (e.g. "下载") with
+    // no extension. Use the chain's recorded filename to recover the real extension.
+    let origBase = item.filename.split(/[/\\]/).pop() ?? item.filename;
+    if (session.mode === 'api' && session.script.apiChains?.length) {
+      const chainIdx = session.downloadedFiles.length;
+      const chain = session.script.apiChains[chainIdx];
+      if (chain?.downloadFilename) {
+        origBase = chain.downloadFilename;
+      }
+    }
     const ext = extractExt(origBase);
     const seq = session.downloadedFiles.length;
     const suffix = seq > 0 ? `_${seq + 1}` : '';
