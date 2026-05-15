@@ -18,6 +18,7 @@ import { initDownloads } from './downloads';
 import { deliverToTab, broadcastStateRefresh } from './inject';
 import { ensureMcpConnected } from './mcp-bridge';
 import { getLicenseStatus, applyLicense, clearPaidLicense } from './license';
+import { startCapture, stopCapture } from './api-capture';
 
 const DRAFT_KEY = 'webxport.draft';
 
@@ -150,11 +151,13 @@ async function beginRecording(tabId: number, name: string): Promise<BackgroundTo
     startedAt: Date.now(),
   };
   await writeDraft(draft, tabId);
+  startCapture(tabId);
 
   const startMsg: BackgroundToContent = { type: 'rec/start', name: draft.name, stepCount: 0 };
   try {
     await deliverToTab(tabId, startMsg);
   } catch (e) {
+    stopCapture(tabId);
     await clearDraft();
     return { type: 'error', error: `无法连接到目标 tab：${(e as Error).message}` };
   }
@@ -171,6 +174,7 @@ async function endRecording(): Promise<BackgroundToPopup> {
   } catch {
     // tab may have been closed; that's fine, we still save what we have
   }
+  stopCapture(session.tabId);
   void broadcastStateRefresh(session.tabId);
 
   if (session.draft.steps.length === 0) {
@@ -200,6 +204,7 @@ async function cancelRecording(): Promise<BackgroundToPopup> {
   try {
     await chrome.tabs.sendMessage(session.tabId, { type: 'rec/stop' } satisfies BackgroundToContent);
   } catch {}
+  stopCapture(session.tabId);
   void broadcastStateRefresh(session.tabId);
   await clearDraft();
   return { type: 'ok' };

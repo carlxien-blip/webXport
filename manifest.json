@@ -13,7 +13,8 @@
     "alarms",
     "downloads",
     "scripting",
-    "tabs"
+    "tabs",
+    "webRequest"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {
